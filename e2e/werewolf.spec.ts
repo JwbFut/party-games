@@ -103,7 +103,7 @@ test.describe('Werewolf 16-player game', () => {
     await checkPage.close()
     if (!wsOk) throw new Error('Cannot connect to local MQTT broker at ws://localhost:18830')
 
-    // ── 1. Create 16 isolated contexts with unique profiles ──
+    // ── 1. Create isolated contexts with unique profiles ──
     const contexts = await Promise.all(
       Array.from({ length: PLAYER_COUNT }, async (_, i) => {
         const ctx = await browser.newContext()
@@ -134,10 +134,10 @@ test.describe('Werewolf 16-player game', () => {
       await new Promise(r => setTimeout(r, 2000)) // let broker breathe
     }
 
-    // Wait for host to see all 16 players
+    // Wait for host to see all players
     await expect(host.locator('.player-row')).toHaveCount(PLAYER_COUNT, { timeout: 60_000 })
 
-    // ── 4. Host configures roles: 12 town + 4 mafia ──
+    // ── 4. Host configures roles ──
     await host.locator('.config-row input').first().fill(String(TOWN_COUNT))
     await host.locator('.config-row input').last().fill(String(MAFIA_COUNT))
 
@@ -145,9 +145,9 @@ test.describe('Werewolf 16-player game', () => {
     await host.locator('button:has-text("Start Game")').click()
 
     // All players should see word collection phase
-    for (const p of pages) {
-      await expect(p.locator('text=Word Collection')).toBeVisible({ timeout: 30_000 })
-    }
+    await Promise.all(pages.map(p =>
+      expect(p.locator('text=Word Collection')).toBeVisible({ timeout: 30_000 }),
+    ))
 
     // ── 6. All 16 players submit words with retry ──
     await Promise.all(
@@ -155,9 +155,9 @@ test.describe('Werewolf 16-player game', () => {
     )
 
     // ── 7. Day phase ──
-    for (const p of pages) {
-      await expect(p.locator('.phase-banner')).toContainText('Day', { timeout: 30_000 })
-    }
+    await Promise.all(pages.map(p =>
+      expect(p.locator('.phase-banner')).toContainText('Day', { timeout: 30_000 }),
+    ))
 
     // Verify the selected word is visible
     await expect(host.locator('text=The word is')).toBeVisible()
@@ -167,14 +167,14 @@ test.describe('Werewolf 16-player game', () => {
 
     // ── 9. Day result ──
     await expect(host.locator('text=Vote Result')).toBeVisible({ timeout: 30_000 })
-    for (const p of pages) {
-      await expect(p.locator('text=Vote Result')).toBeVisible({ timeout: 30_000 })
-    }
+    await Promise.all(pages.map(p =>
+      expect(p.locator('text=Vote Result')).toBeVisible({ timeout: 30_000 }),
+    ))
 
     // ── 10. Night phase (auto-transition after ~3s) ──
-    for (const p of pages) {
-      await expect(p.locator('.phase-banner')).toContainText('Night', { timeout: 30_000 })
-    }
+    await Promise.all(pages.map(p =>
+      expect(p.locator('.phase-banner')).toContainText('Night', { timeout: 30_000 }),
+    ))
 
     // ── 11. Night vote: all pages try, only mafia have vote buttons ──
     let mafiaVoteCount = 0

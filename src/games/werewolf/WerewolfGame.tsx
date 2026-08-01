@@ -144,7 +144,8 @@ export default function WerewolfGame({ room, profile, players, locked, isHost }:
       room.on('message', (msg: RoomMessage) => {
         switch (msg.type) {
           case 'ROLE_ASSIGN': {
-            const { role, mafiaMembers } = msg.payload as RoleAssignPayload
+            const { targetId, role, mafiaMembers } = msg.payload as RoleAssignPayload
+            if (targetId !== profile.id) break
             patch({ myRole: role, mafiaMembers })
             break
           }
@@ -281,7 +282,8 @@ export default function WerewolfGame({ room, profile, players, locked, isHost }:
 
     const mafiaIds = logic.getMafiaMembers(s)
     for (const p of wp) {
-      room.sendPrivate(p.id, 'ROLE_ASSIGN', {
+      room.sendMsg('ROLE_ASSIGN', {
+        targetId: p.id,
         role: roles[p.id],
         mafiaMembers: mafiaIds,
       } satisfies RoleAssignPayload)

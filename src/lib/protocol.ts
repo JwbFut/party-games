@@ -80,6 +80,7 @@ export interface GameEndPayload {
 }
 
 export interface RoleAssignPayload {
+  targetId: string
   role: 'town' | 'mafia'
   mafiaMembers: string[]
 }

@@ -60,7 +60,8 @@ export class Room {
   private joinedOnce = false
   private retryTimer: ReturnType<typeof setInterval> | null = null
   private lobbyTimer: ReturnType<typeof setInterval> | null = null
-  private seenTs = new Set<number>()
+  private seenMsgs = new Set<string>()
+  private lastListTs = 0
 
   constructor(code: string, profile: PlayerProfile, isHost: boolean) {
     this.code = code
@@ -179,7 +180,8 @@ export class Room {
   }
 
   private onMsg(data: RoomMessage, peerId: string): void {
-    if (!this.peerRev.has(peerId)) {
+    const relayed = (data as unknown as Record<string, unknown>)._relayed === true
+    if (!relayed && !this.peerRev.has(peerId)) {
       this.peerRev.set(peerId, data.senderId)
       this.peerMap.set(data.senderId, peerId)
       dbg(`mapped peer ${peerId.slice(0, 8)} → player ${data.senderId.slice(0, 8)}`)
@@ -196,12 +198,18 @@ export class Room {
 
   private gossip(msg: RoomMessage): void {
     if (msg.senderId === this.profile.id) return
-    if (this.seenTs.has(msg.ts)) return
-    const skip: RoomMessage['type'][] = ['JOIN_ACCEPT', 'PLAYER_LEAVE']
-    if (skip.includes(msg.type)) return
-    this.seenTs.add(msg.ts)
-    if (this.seenTs.size > 200) this.seenTs = new Set([...this.seenTs].slice(-100))
-    this.broadcastFn(msg as unknown as Record<string, unknown>).catch(() => {})
+    const key = `${msg.senderId}:${msg.type}:${msg.ts}`
+    if (this.seenMsgs.has(key)) return
+    const allow: RoomMessage['type'][] = [
+      'JOIN_REQUEST', 'JOIN_REJECT', 'PLAYER_LIST', 'PHASE_CHANGE',
+      'ROLE_ASSIGN', 'WORD_SUBMIT', 'WORD_REVEAL',
+      'VOTE', 'VOTE_RESULT', 'KILL_VOTE', 'KILL_RESULT',
+      'GAME_END', 'GAME_STOP',
+    ]
+    if (!allow.includes(msg.type)) return
+    this.seenMsgs.add(key)
+    if (this.seenMsgs.size > 200) this.seenMsgs = new Set([...this.seenMsgs].slice(-100))
+    this.broadcastFn({ ...msg, _relayed: true } as unknown as Record<string, unknown>).catch(() => {})
   }
 
   private onPrivate(data: RoomMessage): void {
@@ -221,7 +229,8 @@ export class Room {
         }
         const { profile } = msg.payload as JoinRequestPayload
         const existing = this.players.find(p => p.id === profile.id)
-        const isRelayed = this.peerRev.has(peerId) && this.peerRev.get(peerId) !== profile.id
+        const isRelayed = (msg as unknown as Record<string, unknown>)._relayed === true
+          || (this.peerRev.has(peerId) && this.peerRev.get(peerId) !== profile.id)
         if (existing) {
           if (!isRelayed) {
             this.peerMap.set(profile.id, peerId)
@@ -268,6 +277,8 @@ export class Room {
     dbg(`player handles: type=${msg.type}`)
     switch (msg.type) {
       case 'PLAYER_LIST': {
+        if (msg.ts < this.lastListTs) break
+        this.lastListTs = msg.ts
         const payload = msg.payload as {
           players: PublicPlayer[]; hostId: string; locked: boolean; config: GameConfigPayload
         }
