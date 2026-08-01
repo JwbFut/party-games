@@ -64,11 +64,12 @@ jobs:
 
       - name: Build
         run: npm run build
-        env:
-          BASE_PATH: /${{ github.event.repository.name }}/
 
       - name: SPA fallback (404 → index)
         run: cp dist/index.html dist/404.html
+
+      - name: Add custom domain
+        run: echo "party-games.jawbts.org" > dist/CNAME
 
       - uses: actions/configure-pages@v5
 
