@@ -59,6 +59,8 @@ export class Room {
   private destroyed = false
   private joinedOnce = false
   private retryTimer: ReturnType<typeof setInterval> | null = null
+  private lobbyTimer: ReturnType<typeof setInterval> | null = null
+  private seenTs = new Set<number>()
 
   constructor(code: string, profile: PlayerProfile, isHost: boolean) {
     this.code = code
@@ -142,6 +144,14 @@ export class Room {
     dbg(`connect: isHost=${this.isHost}`)
     if (this.isHost) {
       this.broadcastPlayerList()
+      this.lobbyTimer = setInterval(() => {
+        if (this.locked || this.destroyed) {
+          if (this.lobbyTimer) clearInterval(this.lobbyTimer)
+          this.lobbyTimer = null
+          return
+        }
+        this.broadcastPlayerList()
+      }, 5000)
     } else {
       this.announce()
       let retries = 0
@@ -181,6 +191,20 @@ export class Room {
       this.handleAsPlayer(data)
     }
     this.emit('message', data)
+    this.gossip(data)
+  }
+
+  /** Re-broadcast select message types so they propagate through partial meshes */
+  private gossip(msg: RoomMessage): void {
+    if (this.seenTs.has(msg.ts)) return
+    const gossipTypes: RoomMessage['type'][] = ['PLAYER_LIST', 'JOIN_REQUEST', 'PHASE_CHANGE']
+    if (!gossipTypes.includes(msg.type)) return
+    this.seenTs.add(msg.ts)
+    if (this.seenTs.size > 200) {
+      const arr = [...this.seenTs]
+      this.seenTs = new Set(arr.slice(-100))
+    }
+    this.broadcastFn(msg as unknown as Record<string, unknown>).catch(() => {})
   }
 
   private onPrivate(data: RoomMessage): void {
@@ -200,20 +224,27 @@ export class Room {
         }
         const { profile } = msg.payload as JoinRequestPayload
         const existing = this.players.find(p => p.id === profile.id)
+        // Relayed JOIN_REQUEST: peerId belongs to another player who forwarded it
+        const isRelayed = this.peerRev.has(peerId) && this.peerRev.get(peerId) !== profile.id
         if (existing) {
-          // Reconnect: update peer mapping, re-send accept + list
-          this.peerMap.set(profile.id, peerId)
-          this.peerRev.set(peerId, profile.id)
-          existing.peerId = peerId
-          this.doSend(this.makeMsg('JOIN_ACCEPT', {}), peerId)
+          if (!isRelayed) {
+            this.peerMap.set(profile.id, peerId)
+            this.peerRev.set(peerId, profile.id)
+            existing.peerId = peerId
+            this.doSend(this.makeMsg('JOIN_ACCEPT', {}), peerId)
+          }
           this.broadcastPlayerList()
           return
         }
-        this.peerMap.set(profile.id, peerId)
-        this.peerRev.set(peerId, profile.id)
-        this.players.push({ ...profile, peerId })
-        dbg(`added player: ${profile.nickname} (${profile.id.slice(0, 8)}) total=${this.players.length}`)
-        this.doSend(this.makeMsg('JOIN_ACCEPT', {}), peerId)
+        if (!isRelayed) {
+          this.peerMap.set(profile.id, peerId)
+          this.peerRev.set(peerId, profile.id)
+        }
+        this.players.push({ ...profile, peerId: isRelayed ? '' : peerId })
+        dbg(`added player: ${profile.nickname} (${profile.id.slice(0, 8)}) total=${this.players.length}${isRelayed ? ' [relayed]' : ''}`)
+        if (!isRelayed) {
+          this.doSend(this.makeMsg('JOIN_ACCEPT', {}), peerId)
+        }
         this.broadcastPlayerList()
         break
       }
@@ -355,6 +386,10 @@ export class Room {
     if (this.retryTimer) {
       clearInterval(this.retryTimer)
       this.retryTimer = null
+    }
+    if (this.lobbyTimer) {
+      clearInterval(this.lobbyTimer)
+      this.lobbyTimer = null
     }
     dbg('destroy')
     this.trystero.leave().catch(() => {})
