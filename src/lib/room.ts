@@ -194,16 +194,13 @@ export class Room {
     this.gossip(data)
   }
 
-  /** Re-broadcast select message types so they propagate through partial meshes */
   private gossip(msg: RoomMessage): void {
+    if (msg.senderId === this.profile.id) return
     if (this.seenTs.has(msg.ts)) return
-    const gossipTypes: RoomMessage['type'][] = ['PLAYER_LIST', 'JOIN_REQUEST', 'PHASE_CHANGE']
-    if (!gossipTypes.includes(msg.type)) return
+    const skip: RoomMessage['type'][] = ['JOIN_ACCEPT', 'PLAYER_LEAVE']
+    if (skip.includes(msg.type)) return
     this.seenTs.add(msg.ts)
-    if (this.seenTs.size > 200) {
-      const arr = [...this.seenTs]
-      this.seenTs = new Set(arr.slice(-100))
-    }
+    if (this.seenTs.size > 200) this.seenTs = new Set([...this.seenTs].slice(-100))
     this.broadcastFn(msg as unknown as Record<string, unknown>).catch(() => {})
   }
 
@@ -219,12 +216,11 @@ export class Room {
     switch (msg.type) {
       case 'JOIN_REQUEST': {
         if (this.locked) {
-          this.doSend(this.makeMsg('JOIN_REJECT', { reason: 'game_started' }), peerId)
+          this.doSend(this.makeMsg('JOIN_REJECT', { reason: 'game_started' }))
           return
         }
         const { profile } = msg.payload as JoinRequestPayload
         const existing = this.players.find(p => p.id === profile.id)
-        // Relayed JOIN_REQUEST: peerId belongs to another player who forwarded it
         const isRelayed = this.peerRev.has(peerId) && this.peerRev.get(peerId) !== profile.id
         if (existing) {
           if (!isRelayed) {
@@ -242,9 +238,7 @@ export class Room {
         }
         this.players.push({ ...profile, peerId: isRelayed ? '' : peerId })
         dbg(`added player: ${profile.nickname} (${profile.id.slice(0, 8)}) total=${this.players.length}${isRelayed ? ' [relayed]' : ''}`)
-        if (!isRelayed) {
-          this.doSend(this.makeMsg('JOIN_ACCEPT', {}), peerId)
-        }
+        if (!isRelayed) this.doSend(this.makeMsg('JOIN_ACCEPT', {}), peerId)
         this.broadcastPlayerList()
         break
       }
@@ -299,6 +293,7 @@ export class Room {
         }
         break
       case 'JOIN_REJECT': {
+        if (this.joinedOnce) break
         const payload = msg.payload as { reason: string }
         dbg(`JOIN_REJECT: ${payload.reason}`)
         this.emit('rejected', payload.reason)
