@@ -22,7 +22,7 @@ export default function DebugPage() {
           { urls: 'stun:stun.miwifi.com:3478' },
           { urls: 'stun:stun.chat.bilibili.com:3478' },
           {
-            urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turn:openrelay.metered.ca:443?transport=tcp'],
+            urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443'],
             username: 'openrelayproject',
             credential: 'openrelayproject',
           },
