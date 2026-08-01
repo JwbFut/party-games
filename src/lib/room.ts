@@ -5,15 +5,26 @@ import type { RoomMessage, GameConfigPayload, JoinRequestPayload } from './proto
 const APP_ID = 'party-games-v1'
 const dbg = (...args: unknown[]) => console.log('[Room]', ...args)
 
-function getRelayUrls(): string[] | undefined {
+function getRelayUrls(): string[] {
   const fromUrl = new URLSearchParams(window.location.search).get('mqtt')
   if (fromUrl) {
-    localStorage.setItem('party-games:mqtt', fromUrl)
+    if (!fromUrl.includes('localhost') && !fromUrl.includes('127.0.0.1')) {
+      localStorage.setItem('party-games:mqtt', fromUrl)
+    }
+    dbg(`relay (from URL param): ${fromUrl}`)
     return [fromUrl]
   }
   const stored = localStorage.getItem('party-games:mqtt')
-  if (stored) return [stored]
-  return undefined
+  if (stored) {
+    dbg(`relay (from localStorage): ${stored}`)
+    return [stored]
+  }
+  const defaults = [
+    'wss://broker-cn.emqx.io:8084/mqtt',
+    'wss://broker.emqx.io:8084/mqtt',
+  ]
+  dbg(`relay: ${defaults.join(', ')}`)
+  return defaults
 }
 
 type Listener<K extends keyof RoomEvents> = (data: RoomEvents[K]) => void
@@ -63,7 +74,7 @@ export class Room {
     const relayUrls = getRelayUrls()
     this.trystero = joinRoom({
       appId: APP_ID,
-      ...(relayUrls ? { relayConfig: { urls: relayUrls, redundancy: 1 } } : {}),
+      relayConfig: { urls: relayUrls },
       rtcConfig: {
         iceServers: [
           { urls: 'stun:stun.cloudflare.com:3478' },
