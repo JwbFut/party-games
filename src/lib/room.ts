@@ -47,6 +47,7 @@ export class Room {
   private listeners = new Map<string, Set<Listener<never>>>()
   private destroyed = false
   private joinedOnce = false
+  private retryTimer: ReturnType<typeof setInterval> | null = null
 
   constructor(code: string, profile: PlayerProfile, isHost: boolean) {
     this.code = code
@@ -65,8 +66,14 @@ export class Room {
       ...(relayUrls ? { relayConfig: { urls: relayUrls, redundancy: 1 } } : {}),
       rtcConfig: {
         iceServers: [
+          { urls: 'stun:stun.cloudflare.com:3478' },
           { urls: 'stun:stun.miwifi.com:3478' },
           { urls: 'stun:stun.chat.bilibili.com:3478' },
+          {
+            urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turn:openrelay.metered.ca:443?transport=tcp'],
+            username: 'openrelayproject',
+            credential: 'openrelayproject',
+          },
         ],
       },
     }, code)
@@ -88,7 +95,12 @@ export class Room {
     }
 
     this.trystero.onPeerJoin = (peerId) => {
-      dbg(`peer JOIN: ${peerId.slice(0, 8)} | peers=${Object.keys(this.trystero.getPeers()).length}`)
+      const peers = this.trystero.getPeers()
+      const pc = peers[peerId] as RTCPeerConnection | undefined
+      dbg(`peer JOIN: ${peerId.slice(0, 8)} | peers=${Object.keys(peers).length} | ice=${pc?.iceConnectionState} conn=${pc?.connectionState}`)
+      pc?.addEventListener('iceconnectionstatechange', () => {
+        dbg(`ICE: ${pc.iceConnectionState} (peer ${peerId.slice(0, 8)})`)
+      })
       if (this.isHost && !this.locked) {
         this.broadcastPlayerList()
       }
@@ -121,12 +133,17 @@ export class Room {
       this.broadcastPlayerList()
     } else {
       this.announce()
-      setTimeout(() => {
-        if (!this.joinedOnce && !this.destroyed) {
-          dbg('retry announce (2s)')
-          this.announce()
+      let retries = 0
+      this.retryTimer = setInterval(() => {
+        if (this.joinedOnce || this.destroyed || retries >= 9) {
+          if (this.retryTimer) clearInterval(this.retryTimer)
+          this.retryTimer = null
+          return
         }
-      }, 2000)
+        retries++
+        dbg(`retry announce (${retries * 3}s, peers=${Object.keys(this.trystero.getPeers()).length})`)
+        this.announce()
+      }, 3000)
     }
   }
 
@@ -324,6 +341,10 @@ export class Room {
 
   destroy(): void {
     this.destroyed = true
+    if (this.retryTimer) {
+      clearInterval(this.retryTimer)
+      this.retryTimer = null
+    }
     dbg('destroy')
     this.trystero.leave().catch(() => {})
     this.listeners.clear()
