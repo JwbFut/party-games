@@ -1,0 +1,128 @@
+{
+  "seo": {
+    "title": "Party Games – Play with Friends Online",
+    "description": "Free browser-based party games. No downloads, no accounts. Create a room, share the code, and play werewolf and more with friends over P2P.",
+    "werewolfTitle": "Word Werewolf – Free Online Party Game",
+    "werewolfDescription": "Play Word Werewolf online with friends. Everyone submits a word, one is chosen secretly. Reason, bluff, and vote to uncover the mafia. No downloads needed – play instantly in your browser."
+  },
+  "gameInfo": {
+    "werewolf": {
+      "tagline": "A social deduction game with a twist of words",
+      "about": "Word Werewolf is a party game where every player contributes a word. One word is randomly selected and revealed to all. Town players must reason and vote to eliminate the hidden mafia, while mafia members secretly coordinate to take over. The twist: the chosen word adds a unique theme to every round.",
+      "howToPlay": "How to Play",
+      "steps": [
+        "The host creates a room and shares the room code with friends.",
+        "The host sets the number of Town and Mafia players, then starts the game.",
+        "Each player secretly submits a word. One word is randomly chosen and revealed.",
+        "During the Day phase, all players discuss and vote to eliminate a suspected mafia member.",
+        "During the Night phase, mafia members secretly vote to eliminate a town player.",
+        "Town wins if all mafia are eliminated. Mafia wins if they equal or outnumber town."
+      ],
+      "rules": "Rules",
+      "ruleList": [
+        "Day vote tie: no one is eliminated that round.",
+        "Mafia night vote tie: a random target among the top-voted is chosen.",
+        "Once the game starts, no new players can join until the host stops the game.",
+        "Eliminated players can spectate but cannot vote."
+      ],
+      "playNow": "Play Now"
+    }
+  },
+  "app": {
+    "name": "Party Games"
+  },
+  "nav": {
+    "home": "Home",
+    "language": "Language"
+  },
+  "profile": {
+    "setupTitle": "Set Up Your Profile",
+    "setupDesc": "Choose a nickname and avatar before joining a game.",
+    "editTitle": "Edit Profile",
+    "nickname": "Nickname",
+    "nicknamePlaceholder": "Enter your nickname",
+    "nicknameTooLong": "Nickname must be {{max}} characters or fewer",
+    "nicknameRequired": "Nickname is required",
+    "avatar": "Avatar",
+    "avatarTooLarge": "Image is too large. Please choose an image under {{max}}KB.",
+    "changeAvatar": "Change Avatar",
+    "save": "Save",
+    "cancel": "Cancel"
+  },
+  "home": {
+    "title": "Party Games",
+    "subtitle": "Play with friends, right in your browser.",
+    "createRoom": "Create Room",
+    "joinRoom": "Join Room",
+    "roomCode": "Room Code",
+    "enterCode": "Enter room code",
+    "join": "Join",
+    "games": "Games",
+    "werewolf": "Word Werewolf",
+    "werewolfDesc": "Everyone submits a word. One is chosen. Reason, deceive, and vote to find the mafia.",
+    "yourProfile": "Your Profile",
+    "editProfile": "Edit",
+    "noProfile": "Set up your profile to start playing."
+  },
+  "room": {
+    "players": "Players",
+    "host": "Host",
+    "you": "You",
+    "leave": "Leave",
+    "copyLink": "Copy Link",
+    "linkCopied": "Link copied!",
+    "waitingForPlayers": "Waiting for players…",
+    "gameInProgress": "Game in progress",
+    "roomFull": "Room is full",
+    "joinRejected": "Cannot join: {{reason}}",
+    "alreadyInRoom": "You are already in this room.",
+    "roomTaken": "This room already has a host.",
+    "hostDisconnected": "Host disconnected. The room has been closed.",
+    "start": "Start Game",
+    "stop": "Stop Game",
+    "connecting": "Connecting…",
+    "connectionFailed": "Connection failed. Please try again.",
+    "webrtcRequired": "WebRTC is not available. Please use HTTPS or localhost. Also check: browser privacy/protection settings or extensions may block WebRTC."
+  },
+  "werewolf": {
+    "town": "Town",
+    "mafia": "Mafia",
+    "yourRole": "Your role",
+    "dayPhase": "Day",
+    "nightPhase": "Night",
+    "wordCollection": "Word Collection",
+    "submitWord": "Submit Word",
+    "yourWord": "Your word",
+    "wordPlaceholder": "Enter a word…",
+    "wordSubmitted": "Word submitted! Waiting for others…",
+    "wordRevealed": "Word Revealed",
+    "theWordIs": "The word is",
+    "vote": "Vote",
+    "voteFor": "Vote to eliminate",
+    "eliminated": "Eliminated",
+    "killed": "Killed by mafia",
+    "townWins": "Town Wins!",
+    "mafiaWins": "Mafia Wins!",
+    "round": "Round {{n}}",
+    "alive": "Alive",
+    "dead": "Dead",
+    "noElimination": "No one was eliminated (tie vote).",
+    "configureRoles": "Configure Roles",
+    "townCount": "Town players",
+    "mafiaCount": "Mafia players",
+    "needPlayers": "Need {{count}} players to start ({{current}}/{{count}})",
+    "waitingForWords": "Waiting for all players to submit words…",
+    "waitingForVotes": "Waiting for votes…",
+    "waitingForMafia": "Mafia is choosing a target…",
+    "youWereEliminated": "You were eliminated. You can still watch.",
+    "mafiaMembers": "Mafia members",
+    "voteResult": "Vote Result",
+    "killResult": "Night Result",
+    "randomTarget": "Mafia votes tied – a random target was chosen.",
+    "gameOver": "Game Over",
+    "playAgain": "Back to Lobby",
+    "nightVoteHint": "Mafia members: vote for a player to eliminate tonight.",
+    "dayVoteHint": "Vote for the player you suspect is mafia.",
+    "wordsCollected": "{{count}}/{{total}} words collected"
+  }
+}
