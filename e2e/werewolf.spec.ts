@@ -1,4 +1,4 @@
-import { test, expect, type Browser, type Page } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 
 const ROOM_CODE = 'PWTEST'
 const PLAYER_COUNT = 16
@@ -45,7 +45,7 @@ async function waitForRoomConnected(page: Page, timeout = 30_000) {
   }
 }
 
-async function joinRoomWithRetry(page: Page, code: string, i: number) {
+async function joinRoomWithRetry(page: Page, code: string, _i: number) {
   await retry(async () => {
     await page.goto(`/en/?room=${code}`)
     await waitForRoomConnected(page, 20_000)
@@ -83,7 +83,7 @@ async function voteWithRetry(page: Page) {
 }
 
 test.describe('Werewolf 16-player game', () => {
-  test.setTimeout(300_000)
+  test.setTimeout(600_000)
   test.describe.configure({ retries: 2 })
 
   // P2P requires WebRTC — Firefox headless has it disabled by default

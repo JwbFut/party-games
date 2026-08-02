@@ -23,6 +23,7 @@ export interface RoomMessage<T = unknown> {
   type: MessageType
   senderId: string
   ts: number
+  seq: number
   payload: T
 }
 

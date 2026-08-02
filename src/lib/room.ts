@@ -62,6 +62,7 @@ export class Room {
   private lobbyTimer: ReturnType<typeof setInterval> | null = null
   private seenMsgs = new Set<string>()
   private lastListTs = 0
+  private msgSeq = 0
 
   constructor(code: string, profile: PlayerProfile, isHost: boolean) {
     this.code = code
@@ -175,12 +176,18 @@ export class Room {
       type: 'JOIN_REQUEST',
       senderId: this.profile.id,
       ts: Date.now(),
+      seq: this.msgSeq++,
       payload: { profile: this.toPublic(this.profile) },
     })
   }
 
   private onMsg(data: RoomMessage, peerId: string): void {
     const relayed = (data as unknown as Record<string, unknown>)._relayed === true
+    const key = `${data.senderId}:${data.seq}`
+    if (relayed && this.seenMsgs.has(key)) return
+    this.seenMsgs.add(key)
+    if (this.seenMsgs.size > 300) this.seenMsgs = new Set([...this.seenMsgs].slice(-150))
+
     if (!relayed && !this.peerRev.has(peerId)) {
       this.peerRev.set(peerId, data.senderId)
       this.peerMap.set(data.senderId, peerId)
@@ -198,8 +205,6 @@ export class Room {
 
   private gossip(msg: RoomMessage): void {
     if (msg.senderId === this.profile.id) return
-    const key = `${msg.senderId}:${msg.type}:${msg.ts}`
-    if (this.seenMsgs.has(key)) return
     const allow: RoomMessage['type'][] = [
       'JOIN_REQUEST', 'JOIN_REJECT', 'PLAYER_LIST', 'PHASE_CHANGE',
       'ROLE_ASSIGN', 'WORD_SUBMIT', 'WORD_REVEAL',
@@ -207,8 +212,6 @@ export class Room {
       'GAME_END', 'GAME_STOP',
     ]
     if (!allow.includes(msg.type)) return
-    this.seenMsgs.add(key)
-    if (this.seenMsgs.size > 200) this.seenMsgs = new Set([...this.seenMsgs].slice(-100))
     this.broadcastFn({ ...msg, _relayed: true } as unknown as Record<string, unknown>).catch(() => {})
   }
 
@@ -329,7 +332,7 @@ export class Room {
   }
 
   private makeMsg(type: RoomMessage['type'], payload: unknown): RoomMessage {
-    return { type, senderId: this.profile.id, ts: Date.now(), payload }
+    return { type, senderId: this.profile.id, ts: Date.now(), seq: this.msgSeq++, payload }
   }
 
   private doSend(msg: RoomMessage, targetPeerId?: string): void {
