@@ -62,6 +62,11 @@ export default function ProfileSetup({ existing, onSaved, onClose }: Props) {
         <h2>{isEdit ? t('profile.editTitle') : t('profile.setupTitle')}</h2>
         {!isEdit && <p>{t('profile.setupDesc')}</p>}
 
+        <div className="privacy-notice">
+          <span className="notice-icon" aria-hidden="true">⚠️</span>
+          <span>{t('profile.privacyNotice')}</span>
+        </div>
+
         <div className="profile-form">
           <div className="avatar-picker">
             <div className="avatar-preview" onClick={() => fileRef.current?.click()}>

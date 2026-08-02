@@ -407,6 +407,27 @@ input::placeholder {
   color: var(--danger);
 }
 
+.privacy-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  background: var(--warning-bg);
+  border: 1px solid rgba(255, 165, 2, 0.35);
+  border-left: 3px solid var(--warning);
+  border-radius: var(--radius-sm);
+  padding: 0.7rem 0.85rem;
+  margin-bottom: 1.25rem;
+  font-size: 0.8rem;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.privacy-notice .notice-icon {
+  flex-shrink: 0;
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+
 .avatar-picker {
   display: flex;
   align-items: center;

@@ -38,6 +38,7 @@
   "profile": {
     "setupTitle": "Set Up Your Profile",
     "setupDesc": "Choose a nickname and avatar before joining a game.",
+    "privacyNotice": "Your nickname and avatar are transmitted in plain text (not encrypted). Don't use a name or image that reveals your real identity.",
     "editTitle": "Edit Profile",
     "nickname": "Nickname",
     "nicknamePlaceholder": "Enter your nickname",

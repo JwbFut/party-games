@@ -38,6 +38,7 @@
   "profile": {
     "setupTitle": "设置你的档案",
     "setupDesc": "加入游戏前，请设置昵称和头像。",
+    "privacyNotice": "昵称和头像以明文传输（未加密）。请不要使用任何与你真实身份有关的名称或图片。",
     "editTitle": "编辑档案",
     "nickname": "昵称",
     "nicknamePlaceholder": "输入你的昵称",
