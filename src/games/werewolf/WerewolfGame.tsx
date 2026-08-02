@@ -5,7 +5,7 @@ import type { PlayerProfile, PublicPlayer } from '../../store/player'
 import type {
   RoomMessage, WordSubmitPayload, VotePayload, WordRevealPayload,
   VoteResultPayload, KillResultPayload, GameEndPayload, RoleAssignPayload,
-  PhaseChangePayload,
+  PhaseChangePayload, WordProgressPayload,
 } from '../../lib/protocol'
 import type { GamePhase, Role, WerewolfState, WerewolfConfig } from './types'
 import * as logic from './logic'
@@ -91,6 +91,7 @@ export default function WerewolfGame({ room, profile, players, locked, isHost }:
             stateRef.current = logic.submitWord(s, msg.senderId, word)
             const snap = logic.toSnapshot(stateRef.current)
             patch({ wordsCollected: snap.wordsCollected, totalWords: snap.totalWords })
+            room.sendMsg('WORD_PROGRESS', { count: snap.wordsCollected, total: snap.totalWords } satisfies WordProgressPayload)
             if (logic.allWordsCollected(stateRef.current)) {
               stateRef.current = logic.revealWord(stateRef.current)
               const words = stateRef.current.selectedWords
@@ -159,6 +160,11 @@ export default function WerewolfGame({ room, profile, players, locked, isHost }:
               ...(phase === 'day' ? { eliminatedId: null, lastTie: false } : {}),
               ...(phase === 'night' ? { killedId: null, lastRandom: false } : {}),
             })
+            break
+          }
+          case 'WORD_PROGRESS': {
+            const { count, total } = msg.payload as WordProgressPayload
+            patch({ wordsCollected: count, totalWords: total })
             break
           }
           case 'WORD_REVEAL': {
@@ -258,6 +264,7 @@ export default function WerewolfGame({ room, profile, players, locked, isHost }:
       eliminatedId: null, killedId: null, lastTie: false, lastRandom: false,
       myWord: '', myVote: '', wordSubmitted: false,
     })
+    room.sendMsg('WORD_PROGRESS', { count: 0, total: snap.totalWords } satisfies WordProgressPayload)
   }, [room, patch])
 
   const resetGame = useCallback(() => {
@@ -305,6 +312,7 @@ export default function WerewolfGame({ room, profile, players, locked, isHost }:
       selectedWords: [],
       winner: null,
     })
+    room.sendMsg('WORD_PROGRESS', { count: 0, total: snap.totalWords } satisfies WordProgressPayload)
   }, [players, room, profile.id, patch])
 
   const submitWord = useCallback((word: string) => {
@@ -312,6 +320,7 @@ export default function WerewolfGame({ room, profile, players, locked, isHost }:
       stateRef.current = logic.submitWord(stateRef.current, profile.id, word)
       const snap = logic.toSnapshot(stateRef.current)
       patch({ wordSubmitted: true, myWord: word, wordsCollected: snap.wordsCollected })
+      room.sendMsg('WORD_PROGRESS', { count: snap.wordsCollected, total: snap.totalWords } satisfies WordProgressPayload)
       if (logic.allWordsCollected(stateRef.current)) {
         stateRef.current = logic.revealWord(stateRef.current)
         const ws = stateRef.current.selectedWords

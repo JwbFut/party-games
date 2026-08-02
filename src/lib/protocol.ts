@@ -10,6 +10,7 @@ export type MessageType =
   | 'GAME_START'
   | 'PHASE_CHANGE'
   | 'WORD_SUBMIT'
+  | 'WORD_PROGRESS'
   | 'WORD_REVEAL'
   | 'VOTE'
   | 'VOTE_RESULT'
@@ -59,6 +60,11 @@ export interface WordSubmitPayload {
 
 export interface WordRevealPayload {
   words: string[]
+}
+
+export interface WordProgressPayload {
+  count: number
+  total: number
 }
 
 export interface VotePayload {
