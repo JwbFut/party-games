@@ -86,11 +86,6 @@ test.describe('Werewolf 16-player game', () => {
   test.setTimeout(600_000)
   test.describe.configure({ retries: 2 })
 
-  // P2P requires WebRTC — Firefox headless has it disabled by default
-  test.beforeEach(({ browserName }) => {
-    test.skip(browserName === 'firefox', 'WebRTC disabled by default in Firefox headless')
-  })
-
   test('full game: lobby → words → day vote → night kill → second round', async ({ browser }) => {
     // ── 0. Pre-check: browser can reach local MQTT broker ──
     const checkPage = await browser.newPage()

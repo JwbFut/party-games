@@ -81,8 +81,7 @@
     "start": "Start Game",
     "stop": "Stop Game",
     "connecting": "Connecting…",
-    "connectionFailed": "Connection failed. Please try again.",
-    "webrtcRequired": "WebRTC is not available. Please use HTTPS or localhost. Also check: browser privacy/protection settings or extensions may block WebRTC."
+    "connectionFailed": "Connection failed. Please try again."
   },
   "werewolf": {
     "town": "Town",

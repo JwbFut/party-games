@@ -1,13 +1,13 @@
 # 🎲 Party Games
 
-Browser-based multiplayer party games over P2P. No downloads, no accounts, no backend server.
+Browser-based multiplayer party games over MQTT. No downloads, no accounts, no self-hosted backend.
 
 [中文文档](#中文文档)
 
 ## Features
 
 - **Pure client-side** — static SPA, deployable to Vercel / Netlify / any file host
-- **P2P networking** — Trystero (Nostr relay signaling + WebRTC direct), zero infrastructure
+- **MQTT networking** — mqtt.js over WebSocket via a public broker, zero self-managed infrastructure
 - **Room-based** — 6-character room codes, host-authoritative state
 - **i18n** — English (`/en/`) and Chinese (`/zh/`) with path-based routing
 - **SEO** — per-language meta tags, Open Graph, hreflang alternates, JSON-LD, per-game info pages
@@ -41,7 +41,7 @@ A social deduction game with a twist of words.
 | Routing | react-router-dom (SPA, query-param rooms) |
 | i18n | i18next + react-i18next |
 | SEO | react-helmet-async |
-| P2P | Trystero (Nostr signaling + WebRTC data channels) |
+| Networking | mqtt.js (MQTT over WebSocket, public broker) |
 | Lint | oxlint |
 
 ## URL Structure
@@ -65,7 +65,7 @@ npm run preview   # preview production build
 
 ## Deployment
 
-The build output in `dist/` is a static SPA (~128 KB gzip). Deploy to Vercel, Netlify, or any static file host — no server-side routing, fallback rules, or relay servers required.
+The build output in `dist/` is a static SPA (~213 KB gzip). Deploy to Vercel, Netlify, or any static file host — no server-side routing or fallback rules required (game messages flow through a public MQTT broker).
 
 ## Project Structure
 
@@ -74,7 +74,7 @@ src/
 ├── i18n/                  # en.json, zh.json, i18next config
 ├── lib/
 │   ├── protocol.ts        # message types, room code generation
-│   └── room.ts            # Room class (Trystero, host authority, join/leave)
+│   └── room.ts            # Room class (MQTT pub/sub, host authority, join/leave)
 ├── store/
 │   └── player.ts          # localStorage profile (nickname, avatar compression)
 ├── components/            # Avatar, Seo (helmet), LanguageSwitcher
@@ -93,8 +93,8 @@ src/
 
 ## Known Limitations
 
-- **Nostr relay dependency** — signaling relies on public Nostr relays; if all relays are down, peers cannot discover each other
-- **Role assignment is soft-private** — messages are targeted per-peer but not end-to-end encrypted
+- **Public broker dependency** — messaging relies on a public MQTT broker (default `broker.emqx.io`); if it's unreachable, players can't connect. Override via the `?mqtt=` URL param or localStorage `party-games:mqtt`
+- **Roles are not private** — role assignments are broadcast through the public broker (filtered client-side), not end-to-end encrypted
 - **Host is single point of failure** — if the host disconnects, the game ends
 
 ---
@@ -103,12 +103,12 @@ src/
 
 # 🎲 派对游戏
 
-基于 P2P 的浏览器多人派对游戏。无需下载、无需注册、无需后端服务器。
+基于 MQTT 的浏览器多人派对游戏。无需下载、无需注册、无需自建后端。
 
 ## 特性
 
 - **纯客户端** — 静态 SPA，可部署到 Vercel / Netlify / 任何文件托管
-- **P2P 通信** — Trystero（Nostr relay 信令 + WebRTC 直连），零基础设施
+- **MQTT 通信** — mqtt.js over WebSocket，接入公共 broker，零自建基础设施
 - **房间制** — 6 位房间号，房主权威状态模型
 - **国际化** — 英文（`/en/`）和中文（`/zh/`），路径前缀路由
 - **SEO 优化** — 多语言 meta 标签、Open Graph、hreflang、JSON-LD、游戏专属简介页
@@ -142,7 +142,7 @@ src/
 | 路由 | react-router-dom（SPA，query 参数房间） |
 | 国际化 | i18next + react-i18next |
 | SEO | react-helmet-async |
-| P2P | Trystero（Nostr 信令 + WebRTC 数据通道） |
+| 网络 | mqtt.js（MQTT over WebSocket，公共 broker） |
 | 检查 | oxlint |
 
 ## URL 结构
@@ -166,10 +166,10 @@ npm run preview   # 预览生产构建
 
 ## 部署
 
-`dist/` 目录是纯静态 SPA（gzip 约 128 KB），可直接部署到 Vercel、Netlify 或任何静态文件托管。无需服务端路由、fallback 规则或中继服务器。
+`dist/` 目录是纯静态 SPA（gzip 约 213 KB），可直接部署到 Vercel、Netlify 或任何静态文件托管。无需服务端路由或 fallback 规则（游戏消息经公共 MQTT broker 中转）。
 
 ## 已知限制
 
-- **依赖公共 Nostr relay** — 信令通过公共 Nostr relay 中转，若所有 relay 不可用则无法发现对方
-- **角色分配为软隐私** — 消息按 peer 定向发送，但非端到端加密
+- **依赖公共 broker** — 消息经公共 MQTT broker（默认 `broker.emqx.io`）中转，若不可达则无法连接。可用 `?mqtt=` URL 参数或 localStorage `party-games:mqtt` 覆盖
+- **角色非私密** — 角色分配经公共 broker 广播（客户端过滤），非端到端加密
 - **房主为单点** — 房主断开连接则游戏结束

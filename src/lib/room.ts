@@ -1,34 +1,35 @@
-import { joinRoom, type Room as TrysteroRoom } from '@trystero-p2p/mqtt'
+import mqtt from 'mqtt'
+import type { MqttClient } from 'mqtt'
 import type { PlayerProfile, PublicPlayer } from '../store/player'
-import type { RoomMessage, GameConfigPayload, JoinRequestPayload } from './protocol'
+import type {
+  RoomMessage, GameConfigPayload, JoinRequestPayload,
+  PlayerListPayload, JoinRejectPayload, PhaseChangePayload,
+} from './protocol'
 
-const APP_ID = 'party-games-v1'
+const APP_ID = 'org-jawbts-party-games-v1'
 const dbg = (...args: unknown[]) => console.log('[Room]', ...args)
 
-function getRelayUrls(): string[] {
+function getMqttBrokerUrl(): string {
   const fromUrl = new URLSearchParams(window.location.search).get('mqtt')
   if (fromUrl) {
     if (!fromUrl.includes('localhost') && !fromUrl.includes('127.0.0.1')) {
       localStorage.setItem('party-games:mqtt', fromUrl)
     }
-    dbg(`relay (from URL param): ${fromUrl}`)
-    return [fromUrl]
+    dbg(`broker (from URL param): ${fromUrl}`)
+    return fromUrl
   }
   const stored = localStorage.getItem('party-games:mqtt')
   if (stored) {
-    dbg(`relay (from localStorage): ${stored}`)
-    return [stored]
+    dbg(`broker (from localStorage): ${stored}`)
+    return stored
   }
-  const defaults = [
-    'wss://broker-cn.emqx.io:8084/mqtt',
-    'wss://broker.emqx.io:8084/mqtt',
-  ]
-  dbg(`relay: ${defaults.join(', ')}`)
-  return defaults
+  const defaultBroker = 'wss://broker.emqx.io:8084/mqtt'
+  dbg(`broker: ${defaultBroker}`)
+  return defaultBroker
 }
 
 type Listener<K extends keyof RoomEvents> = (data: RoomEvents[K]) => void
-type SendFn = (data: Record<string, unknown>, opts?: { target?: string | string[] }) => Promise<void>
+type WireMessage = RoomMessage & { _cid: string }
 
 export interface RoomEvents {
   players: PublicPlayer[]
@@ -50,17 +51,16 @@ export class Room {
   locked = false
   config: GameConfigPayload = { town: 0, mafia: 0 }
 
-  private trystero: TrysteroRoom
-  private broadcastFn: SendFn
-  private sendToFn: SendFn
-  private peerMap = new Map<string, string>()
-  private peerRev = new Map<string, string>()
+  private client: MqttClient
+  private clientId: string
+  private base: string
+  private roomTopic: string
+  private dmTopic: string
   private listeners = new Map<string, Set<Listener<never>>>()
   private destroyed = false
   private joinedOnce = false
   private retryTimer: ReturnType<typeof setInterval> | null = null
   private lobbyTimer: ReturnType<typeof setInterval> | null = null
-  private seenMsgs = new Set<string>()
   private lastListTs = 0
   private msgSeq = 0
 
@@ -73,202 +73,177 @@ export class Room {
       this.players = [this.toPublic(profile)]
     }
 
+    this.clientId = `pg-${Math.random().toString(36).slice(2, 10)}`
+    this.base = `${APP_ID}/${code}`
+    this.roomTopic = `${this.base}/room`
+    this.dmTopic = `${this.base}/dm/${profile.id}`
+
     dbg(`init: code=${code} isHost=${isHost} id=${profile.id.slice(0, 8)}`)
 
-    const relayUrls = getRelayUrls()
-    this.trystero = joinRoom({
-      appId: APP_ID,
-      relayConfig: { urls: relayUrls },
-      rtcConfig: {
-        iceServers: [
-          { urls: 'stun:stun.cloudflare.com:3478' },
-          { urls: 'stun:stun.miwifi.com:3478' },
-          { urls: 'stun:stun.chat.bilibili.com:3478' },
-          {
-            urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443'],
-            username: 'openrelayproject',
-            credential: 'openrelayproject',
-          },
-        ],
+    // Last-will: published by the broker if this client drops ungracefully.
+    // Hosts announce HOST_LOST; players announce their own PLAYER_LEAVE.
+    const will = {
+      type: isHost ? 'HOST_LOST' : 'PLAYER_LEAVE',
+      senderId: profile.id,
+      ts: Date.now(),
+      seq: -1,
+      payload: {},
+      _cid: this.clientId,
+    }
+
+    this.client = mqtt.connect(getMqttBrokerUrl(), {
+      clientId: this.clientId,
+      clean: true,
+      keepalive: 30,
+      connectTimeout: 4000,
+      reconnectPeriod: 1000,
+      will: {
+        topic: this.roomTopic,
+        payload: JSON.stringify(will),
+        qos: 0,
+        retain: false,
       },
-    }, code)
+    })
 
-    const msg = this.trystero.makeAction('msg')
-    const priv = this.trystero.makeAction('priv')
-    this.broadcastFn = msg.send as SendFn
-    this.sendToFn = priv.send as SendFn
-
-    msg.onMessage = (data, ctx) => {
-      const m = data as unknown as RoomMessage
-      dbg(`recv msg: type=${m.type} from=${ctx.peerId.slice(0, 8)} sender=${m.senderId?.slice(0, 8)}`)
-      this.onMsg(m, ctx.peerId)
-    }
-    priv.onMessage = (data, ctx) => {
-      const m = data as unknown as RoomMessage
-      dbg(`recv priv: type=${m.type} from=${ctx.peerId.slice(0, 8)}`)
-      this.onPrivate(m)
-    }
-
-    this.trystero.onPeerJoin = (peerId) => {
-      const peers = this.trystero.getPeers()
-      const pc = peers[peerId] as RTCPeerConnection | undefined
-      dbg(`peer JOIN: ${peerId.slice(0, 8)} | peers=${Object.keys(peers).length} | ice=${pc?.iceConnectionState} conn=${pc?.connectionState}`)
-      pc?.addEventListener('iceconnectionstatechange', () => {
-        dbg(`ICE: ${pc.iceConnectionState} (peer ${peerId.slice(0, 8)})`)
+    this.client.on('connect', () => {
+      dbg('mqtt connected')
+      this.client.subscribe([this.roomTopic, this.dmTopic], { qos: 0 }, (err) => {
+        if (err) dbg('subscribe error:', err)
+        this.onReady()
       })
-      if (this.isHost && !this.locked) {
-        this.broadcastPlayerList()
-      }
-      if (!this.isHost && !this.joinedOnce) {
-        this.announce()
-      }
-    }
+    })
 
-    this.trystero.onPeerLeave = (peerId) => {
-      dbg(`peer LEAVE: ${peerId.slice(0, 8)}`)
-      const playerId = this.peerRev.get(peerId)
-      if (playerId) {
-        this.peerMap.delete(playerId)
-        this.peerRev.delete(peerId)
-      }
-      if (!this.isHost && playerId === this.hostId) {
-        this.emit('hostLost', undefined as never)
+    this.client.on('message', (_topic, payload) => {
+      let data: WireMessage
+      try {
+        data = JSON.parse(payload.toString()) as WireMessage
+      } catch {
         return
       }
-      if (this.isHost) {
-        this.players = this.players.filter(p => p.id !== playerId)
-        this.broadcastPlayerList()
-      }
-    }
+      if (data._cid === this.clientId) return // ignore our own publishes
+      this.onMsg(data)
+    })
+
+    this.client.on('error', (err) => dbg('mqtt error:', err.message))
   }
 
   async connect(): Promise<void> {
     dbg(`connect: isHost=${this.isHost}`)
+    if (this.client.connected) return
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        cleanup()
+        reject(new Error('mqtt connect timeout'))
+      }, 10000)
+      const onConnect = () => {
+        cleanup()
+        resolve()
+      }
+      const onError = (err: Error) => {
+        cleanup()
+        reject(err)
+      }
+      const cleanup = () => {
+        clearTimeout(timer)
+        this.client.removeListener('connect', onConnect)
+        this.client.removeListener('error', onError)
+      }
+      this.client.on('connect', onConnect)
+      this.client.on('error', onError)
+    })
+  }
+
+  private onReady(): void {
+    if (this.destroyed) return
     if (this.isHost) {
       this.broadcastPlayerList()
-      this.lobbyTimer = setInterval(() => {
-        if (this.locked || this.destroyed) {
-          if (this.lobbyTimer) clearInterval(this.lobbyTimer)
-          this.lobbyTimer = null
-          return
-        }
-        this.broadcastPlayerList()
-      }, 5000)
+      if (!this.lobbyTimer) {
+        this.lobbyTimer = setInterval(() => {
+          if (this.locked || this.destroyed) {
+            if (this.lobbyTimer) clearInterval(this.lobbyTimer)
+            this.lobbyTimer = null
+            return
+          }
+          this.broadcastPlayerList()
+        }, 5000)
+      }
     } else {
       this.announce()
-      let retries = 0
-      this.retryTimer = setInterval(() => {
-        if (this.joinedOnce || this.destroyed || retries >= 9) {
-          if (this.retryTimer) clearInterval(this.retryTimer)
-          this.retryTimer = null
-          return
-        }
-        retries++
-        dbg(`retry announce (${retries * 3}s, peers=${Object.keys(this.trystero.getPeers()).length})`)
-        this.announce()
-      }, 3000)
+      if (!this.retryTimer) {
+        let retries = 0
+        this.retryTimer = setInterval(() => {
+          if (this.joinedOnce || this.destroyed || retries >= 9) {
+            if (this.retryTimer) clearInterval(this.retryTimer)
+            this.retryTimer = null
+            return
+          }
+          retries++
+          dbg(`retry announce (${retries * 3}s)`)
+          this.announce()
+        }, 3000)
+      }
     }
   }
 
   private announce(): void {
     dbg('send JOIN_REQUEST')
-    this.doSend({
-      type: 'JOIN_REQUEST',
-      senderId: this.profile.id,
-      ts: Date.now(),
-      seq: this.msgSeq++,
-      payload: { profile: this.toPublic(this.profile) },
-    })
+    this.publish(this.roomTopic, this.makeMsg('JOIN_REQUEST', { profile: this.toPublic(this.profile) }))
   }
 
-  private onMsg(data: RoomMessage, peerId: string): void {
-    const relayed = (data as unknown as Record<string, unknown>)._relayed === true
-    const key = `${data.senderId}:${data.seq}`
-    if (relayed && this.seenMsgs.has(key)) return
-    this.seenMsgs.add(key)
-    if (this.seenMsgs.size > 300) this.seenMsgs = new Set([...this.seenMsgs].slice(-150))
-
-    if (!relayed && !this.peerRev.has(peerId)) {
-      this.peerRev.set(peerId, data.senderId)
-      this.peerMap.set(data.senderId, peerId)
-      dbg(`mapped peer ${peerId.slice(0, 8)} → player ${data.senderId.slice(0, 8)}`)
+  private onMsg(data: WireMessage): void {
+    if (data.type === 'HOST_LOST') {
+      if (!this.isHost) {
+        dbg('host lost')
+        this.emit('hostLost', undefined as never)
+      }
+      return
     }
 
     if (this.isHost) {
-      this.handleAsHost(data, peerId)
+      this.handleAsHost(data)
     } else {
       this.handleAsPlayer(data)
     }
     this.emit('message', data)
-    this.gossip(data)
   }
 
-  private gossip(msg: RoomMessage): void {
-    if (msg.senderId === this.profile.id) return
-    const allow: RoomMessage['type'][] = [
-      'JOIN_REQUEST', 'JOIN_REJECT', 'PLAYER_LIST', 'PHASE_CHANGE',
-      'ROLE_ASSIGN', 'WORD_SUBMIT', 'WORD_REVEAL',
-      'VOTE', 'VOTE_RESULT', 'KILL_VOTE', 'KILL_RESULT',
-      'GAME_END', 'GAME_STOP',
-    ]
-    if (!allow.includes(msg.type)) return
-    this.broadcastFn({ ...msg, _relayed: true } as unknown as Record<string, unknown>).catch(() => {})
-  }
-
-  private onPrivate(data: RoomMessage): void {
-    if (!this.isHost) {
-      this.handleAsPlayer(data)
-    }
-    this.emit('message', data)
-  }
-
-  private handleAsHost(msg: RoomMessage, peerId: string): void {
-    dbg(`host handles: type=${msg.type} from=${peerId.slice(0, 8)}`)
+  private handleAsHost(msg: RoomMessage): void {
+    dbg(`host handles: type=${msg.type} from=${msg.senderId.slice(0, 8)}`)
     switch (msg.type) {
       case 'JOIN_REQUEST': {
         if (this.locked) {
-          this.doSend(this.makeMsg('JOIN_REJECT', { reason: 'game_started' }))
+          this.sendDirect(msg.senderId, this.makeMsg('JOIN_REJECT', { reason: 'game_started' }))
           return
         }
         const { profile } = msg.payload as JoinRequestPayload
         const existing = this.players.find(p => p.id === profile.id)
-        const isRelayed = (msg as unknown as Record<string, unknown>)._relayed === true
-          || (this.peerRev.has(peerId) && this.peerRev.get(peerId) !== profile.id)
         if (existing) {
-          if (!isRelayed) {
-            this.peerMap.set(profile.id, peerId)
-            this.peerRev.set(peerId, profile.id)
-            existing.peerId = peerId
-            this.doSend(this.makeMsg('JOIN_ACCEPT', {}), peerId)
-          }
+          dbg(`re-accept player: ${profile.nickname} (${profile.id.slice(0, 8)})`)
+          this.sendDirect(profile.id, this.makeMsg('JOIN_ACCEPT', {}))
           this.broadcastPlayerList()
           return
         }
-        if (!isRelayed) {
-          this.peerMap.set(profile.id, peerId)
-          this.peerRev.set(peerId, profile.id)
-        }
-        this.players.push({ ...profile, peerId: isRelayed ? '' : peerId })
-        dbg(`added player: ${profile.nickname} (${profile.id.slice(0, 8)}) total=${this.players.length}${isRelayed ? ' [relayed]' : ''}`)
-        if (!isRelayed) this.doSend(this.makeMsg('JOIN_ACCEPT', {}), peerId)
+        this.players.push({ ...profile })
+        dbg(`added player: ${profile.nickname} (${profile.id.slice(0, 8)}) total=${this.players.length}`)
+        this.sendDirect(profile.id, this.makeMsg('JOIN_ACCEPT', {}))
         this.broadcastPlayerList()
         break
       }
       case 'PLAYER_LIST': {
-        const payload = msg.payload as { hostId: string }
-        if (payload.hostId !== this.profile.id) {
-          dbg('room collision: another host exists')
+        const payload = msg.payload as PlayerListPayload
+        // Deterministic tie-break: the host with the "larger" id yields, so
+        // exactly one host survives a room-code collision.
+        if (payload.hostId !== this.profile.id && payload.hostId < this.profile.id) {
+          dbg('room collision: yielding to earlier host')
           this.emit('error', 'room_taken')
           this.destroy()
         }
         break
       }
       case 'PLAYER_LEAVE': {
-        const playerId = this.peerRev.get(peerId) ?? msg.senderId
-        this.players = this.players.filter(p => p.id !== playerId)
-        this.peerMap.delete(playerId)
-        this.peerRev.delete(peerId)
-        this.broadcastPlayerList()
+        const before = this.players.length
+        this.players = this.players.filter(p => p.id !== msg.senderId)
+        if (this.players.length !== before) this.broadcastPlayerList()
         break
       }
       default:
@@ -282,9 +257,7 @@ export class Room {
       case 'PLAYER_LIST': {
         if (msg.ts < this.lastListTs) break
         this.lastListTs = msg.ts
-        const payload = msg.payload as {
-          players: PublicPlayer[]; hostId: string; locked: boolean; config: GameConfigPayload
-        }
+        const payload = msg.payload as PlayerListPayload
         this.players = payload.players
         this.hostId = payload.hostId
         this.locked = payload.locked
@@ -308,13 +281,13 @@ export class Room {
         break
       case 'JOIN_REJECT': {
         if (this.joinedOnce) break
-        const payload = msg.payload as { reason: string }
+        const payload = msg.payload as JoinRejectPayload
         dbg(`JOIN_REJECT: ${payload.reason}`)
         this.emit('rejected', payload.reason)
         break
       }
       case 'PHASE_CHANGE': {
-        const payload = msg.payload as { phase: string; round: number }
+        const payload = msg.payload as PhaseChangePayload
         this.emit('phase', payload)
         break
       }
@@ -331,25 +304,22 @@ export class Room {
     return { id: p.id, nickname: p.nickname, avatar: p.avatar, peerId: '' }
   }
 
-  private makeMsg(type: RoomMessage['type'], payload: unknown): RoomMessage {
-    return { type, senderId: this.profile.id, ts: Date.now(), seq: this.msgSeq++, payload }
+  private makeMsg(type: RoomMessage['type'], payload: unknown): WireMessage {
+    return { type, senderId: this.profile.id, ts: Date.now(), seq: this.msgSeq++, payload, _cid: this.clientId }
   }
 
-  private doSend(msg: RoomMessage, targetPeerId?: string): void {
+  private publish(topic: string, msg: WireMessage): void {
     if (this.destroyed) return
-    const data = msg as unknown as Record<string, unknown>
-    const peers = Object.keys(this.trystero.getPeers())
-    dbg(`send: type=${msg.type} target=${targetPeerId?.slice(0, 8) ?? 'broadcast'} connectedPeers=${peers.length}`)
-    if (targetPeerId) {
-      this.sendToFn(data, { target: targetPeerId }).catch(e => dbg('sendTo error:', e))
-    } else {
-      this.broadcastFn(data).catch(e => dbg('broadcast error:', e))
-    }
+    this.client.publish(topic, JSON.stringify(msg), { qos: 0 })
+  }
+
+  private sendDirect(playerId: string, msg: WireMessage): void {
+    this.publish(`${this.base}/dm/${playerId}`, msg)
   }
 
   broadcastPlayerList(): void {
     this.emit('players', [...this.players])
-    this.doSend(this.makeMsg('PLAYER_LIST', {
+    this.publish(this.roomTopic, this.makeMsg('PLAYER_LIST', {
       players: this.players,
       hostId: this.hostId,
       locked: this.locked,
@@ -358,16 +328,11 @@ export class Room {
   }
 
   sendMsg(type: RoomMessage['type'], payload: unknown): void {
-    this.doSend(this.makeMsg(type, payload))
+    this.publish(this.roomTopic, this.makeMsg(type, payload))
   }
 
   sendPrivate(playerId: string, type: RoomMessage['type'], payload: unknown): void {
-    const peerId = this.peerMap.get(playerId)
-    if (peerId) {
-      this.doSend(this.makeMsg(type, payload), peerId)
-    } else {
-      dbg(`sendPrivate: no peerId for player ${playerId.slice(0, 8)}`)
-    }
+    this.sendDirect(playerId, this.makeMsg(type, payload))
   }
 
   setConfig(config: GameConfigPayload): void {
@@ -386,11 +351,16 @@ export class Room {
   }
 
   leave(): void {
-    this.doSend(this.makeMsg('PLAYER_LEAVE', {}))
+    if (this.isHost) {
+      this.publish(this.roomTopic, this.makeMsg('HOST_LOST', {}))
+    } else {
+      this.publish(this.roomTopic, this.makeMsg('PLAYER_LEAVE', {}))
+    }
     this.destroy()
   }
 
   destroy(): void {
+    if (this.destroyed) return
     this.destroyed = true
     if (this.retryTimer) {
       clearInterval(this.retryTimer)
@@ -401,8 +371,9 @@ export class Room {
       this.lobbyTimer = null
     }
     dbg('destroy')
-    this.trystero.leave().catch(() => {})
     this.listeners.clear()
+    // Graceful end sends DISCONNECT, which suppresses the last-will.
+    this.client.end()
   }
 
   on<K extends keyof RoomEvents>(event: K, fn: Listener<K>): () => void {

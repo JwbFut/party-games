@@ -18,6 +18,7 @@ export type MessageType =
   | 'GAME_END'
   | 'GAME_STOP'
   | 'ROLE_ASSIGN'
+  | 'HOST_LOST'
 
 export interface RoomMessage<T = unknown> {
   type: MessageType

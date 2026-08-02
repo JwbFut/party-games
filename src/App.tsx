@@ -6,7 +6,6 @@ import LanguageSwitcher from './components/LanguageSwitcher'
 import HomePage from './pages/HomePage'
 import RoomPage from './pages/RoomPage'
 import GameInfoPage from './pages/GameInfoPage'
-import DebugPage from './pages/DebugPage'
 
 function RootRedirect() {
   const browserLang = navigator.language.slice(0, 2)
@@ -60,7 +59,6 @@ export default function App() {
         <Route index element={<IndexRouter />} />
         <Route path="games/werewolf" element={<GameInfoPage game="werewolf" />} />
       </Route>
-      <Route path="/debug" element={<DebugPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

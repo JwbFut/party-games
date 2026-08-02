@@ -81,8 +81,7 @@
     "start": "开始游戏",
     "stop": "停止游戏",
     "connecting": "连接中…",
-    "connectionFailed": "连接失败，请重试。",
-    "webrtcRequired": "WebRTC 不可用。请通过 HTTPS 或 localhost 访问。另请检查：浏览器隐私/保护设置或扩展插件可能禁用了 WebRTC。"
+    "connectionFailed": "连接失败，请重试。"
   },
   "werewolf": {
     "town": "村民",

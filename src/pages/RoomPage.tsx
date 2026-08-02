@@ -35,12 +35,6 @@ export default function RoomPage({ code, isHost }: Props) {
       return
     }
 
-    if (typeof RTCPeerConnection === 'undefined') {
-      setErrorDetail('RTCPeerConnection undefined')
-      setConnState('error')
-      return
-    }
-
     let room: Room
     try {
       room = new Room(code.toUpperCase(), profile, isHost)
@@ -110,11 +104,10 @@ export default function RoomPage({ code, isHost }: Props) {
   }
 
   if (connState === 'error') {
-    const noWebrtc = typeof RTCPeerConnection === 'undefined'
     return (
       <div className="container">
         <div className="empty-state">
-          {noWebrtc ? t('room.webrtcRequired') : t('room.connectionFailed')}
+          {t('room.connectionFailed')}
           {errorDetail && <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>{errorDetail}</div>}
         </div>
         <button className="btn-ghost" style={{ display: 'block', margin: '1rem auto' }} onClick={() => navigate(`/${lang}`)}>
