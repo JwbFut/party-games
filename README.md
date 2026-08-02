@@ -21,7 +21,7 @@ A social deduction game with a twist of words.
 
 1. The host creates a room from the game page and shares the room code.
 2. The host sets the number of Town and Mafia players, then starts the game.
-3. Each player secretly submits a word. One word is randomly chosen and revealed.
+3. Each player secretly submits a word. All of the mafia's words are revealed.
 4. **Day** — all players discuss and vote to eliminate a suspected mafia member.
 5. **Night** — mafia members secretly vote to eliminate a town player.
 6. Town wins if all mafia are eliminated. Mafia wins if they equal or outnumber town.
@@ -122,7 +122,7 @@ src/
 
 1. 房主从游戏页面创建房间，将房间号分享给朋友。
 2. 房主设置村民和狼人的人数，然后开始游戏。
-3. 每位玩家秘密提交一个词，系统随机选中一个词并公布。
+3. 每位玩家秘密提交一个词，系统公布所有狼人的词。
 4. **白天** — 所有玩家讨论并投票淘汰疑似狼人的玩家。
 5. **夜晚** — 狼人秘密投票淘汰一名村民。
 6. 狼人全部被淘汰则村民胜利；狼人数等于或多于村民则狼人胜利。

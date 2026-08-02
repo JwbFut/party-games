@@ -29,7 +29,7 @@ export interface UIState {
   round: number
   myRole: Role | null
   mafiaMembers: string[]
-  selectedWord: string | null
+  selectedWords: string[]
   eliminatedId: string | null
   killedId: string | null
   deadIds: string[]
@@ -51,7 +51,7 @@ const initialUI: UIState = {
   round: 0,
   myRole: null,
   mafiaMembers: [],
-  selectedWord: null,
+  selectedWords: [],
   eliminatedId: null,
   killedId: null,
   deadIds: [],
@@ -93,8 +93,8 @@ export default function WerewolfGame({ room, profile, players, locked, isHost }:
             patch({ wordsCollected: snap.wordsCollected, totalWords: snap.totalWords })
             if (logic.allWordsCollected(stateRef.current)) {
               stateRef.current = logic.revealWord(stateRef.current)
-              const word = stateRef.current.selectedWord!
-              room.sendMsg('WORD_REVEAL', { word } satisfies WordRevealPayload)
+              const words = stateRef.current.selectedWords
+              room.sendMsg('WORD_REVEAL', { words } satisfies WordRevealPayload)
               advanceToDay()
             }
             break
@@ -155,15 +155,15 @@ export default function WerewolfGame({ room, profile, players, locked, isHost }:
               phase: phase as GamePhase,
               round,
               myVote: '',
-              ...(phase === 'word_collect' ? { wordSubmitted: false, myWord: '', selectedWord: null } : {}),
+              ...(phase === 'word_collect' ? { wordSubmitted: false, myWord: '', selectedWords: [] } : {}),
               ...(phase === 'day' ? { eliminatedId: null, lastTie: false } : {}),
               ...(phase === 'night' ? { killedId: null, lastRandom: false } : {}),
             })
             break
           }
           case 'WORD_REVEAL': {
-            const { word } = msg.payload as WordRevealPayload
-            patch({ selectedWord: word, phase: 'word_reveal' })
+            const { words } = msg.payload as WordRevealPayload
+            patch({ selectedWords: words, phase: 'word_reveal' })
             break
           }
           case 'VOTE_RESULT': {
@@ -198,7 +198,7 @@ export default function WerewolfGame({ room, profile, players, locked, isHost }:
     stateRef.current = logic.startDay(stateRef.current)
     const s = stateRef.current
     room.sendMsg('PHASE_CHANGE', { phase: 'day', round: s.round } satisfies PhaseChangePayload)
-    patch({ phase: 'day', round: s.round, selectedWord: s.selectedWord, votesCollected: 0, totalVotes: s.players.filter(p => p.alive).length, myVote: '' })
+    patch({ phase: 'day', round: s.round, selectedWords: s.selectedWords, votesCollected: 0, totalVotes: s.players.filter(p => p.alive).length, myVote: '' })
   }, [room, patch])
 
   const broadcastDayResult = useCallback(() => {
@@ -253,7 +253,7 @@ export default function WerewolfGame({ room, profile, players, locked, isHost }:
     const snap = logic.toSnapshot(stateRef.current)
     room.sendMsg('PHASE_CHANGE', { phase: 'word_collect', round: s.round } satisfies PhaseChangePayload)
     patch({
-      phase: 'word_collect', round: s.round, selectedWord: null,
+      phase: 'word_collect', round: s.round, selectedWords: [],
       wordsCollected: 0, totalWords: snap.totalWords,
       eliminatedId: null, killedId: null, lastTie: false, lastRandom: false,
       myWord: '', myVote: '', wordSubmitted: false,
@@ -302,7 +302,7 @@ export default function WerewolfGame({ room, profile, players, locked, isHost }:
       wordSubmitted: false,
       myWord: '',
       myVote: '',
-      selectedWord: null,
+      selectedWords: [],
       winner: null,
     })
   }, [players, room, profile.id, patch])
@@ -314,8 +314,8 @@ export default function WerewolfGame({ room, profile, players, locked, isHost }:
       patch({ wordSubmitted: true, myWord: word, wordsCollected: snap.wordsCollected })
       if (logic.allWordsCollected(stateRef.current)) {
         stateRef.current = logic.revealWord(stateRef.current)
-        const w = stateRef.current.selectedWord!
-        room.sendMsg('WORD_REVEAL', { word: w } satisfies WordRevealPayload)
+        const ws = stateRef.current.selectedWords
+        room.sendMsg('WORD_REVEAL', { words: ws } satisfies WordRevealPayload)
         advanceToDay()
       }
     } else {

@@ -25,7 +25,7 @@ export default function WordPhase({ ui, t, onSubmitWord }: Props) {
         <div className="result-text">
           <span style={{ color: 'var(--text-secondary)' }}>{t('werewolf.theWordIs')}</span>
           <span className="highlight" style={{ color: 'var(--accent)', fontSize: '2rem' }}>
-            {ui.selectedWord}
+            {ui.selectedWords.join(', ')}
           </span>
         </div>
       </div>

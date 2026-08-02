@@ -154,8 +154,8 @@ test.describe('Werewolf 16-player game', () => {
       expect(p.locator('.phase-banner')).toContainText('Day', { timeout: 30_000 }),
     ))
 
-    // Verify the selected word is visible
-    await expect(host.locator('text=The word is')).toBeVisible()
+    // Verify the revealed words are visible
+    await expect(host.locator('text=The words are')).toBeVisible()
 
     // ── 8. All 16 players vote with retry ──
     await Promise.all(pages.map(p => voteWithRetry(p)))

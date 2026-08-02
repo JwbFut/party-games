@@ -29,7 +29,7 @@ export interface WerewolfState {
   players: WerewolfPlayer[]
   roles: Record<string, Role>
   words: Record<string, string>
-  selectedWord: string | null
+  selectedWords: string[]
   votes: Record<string, string>
   eliminatedId: string | null
   killedId: string | null
@@ -43,7 +43,7 @@ export interface WerewolfSnapshot {
   phase: GamePhase
   round: number
   players: WerewolfPlayer[]
-  selectedWord: string | null
+  selectedWords: string[]
   eliminatedId: string | null
   killedId: string | null
   lastTie: boolean

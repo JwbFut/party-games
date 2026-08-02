@@ -14,7 +14,7 @@ export default defineConfig({
     viewport: { width: 1280, height: 720 },
   },
   webServer: {
-    command: 'npm run preview',
+    command: 'npm run build && npm run preview',
     port: 4173,
     reuseExistingServer: false,
   },

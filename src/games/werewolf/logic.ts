@@ -10,7 +10,7 @@ export function createInitialState(config: WerewolfConfig): WerewolfState {
     players: [],
     roles: {},
     words: {},
-    selectedWord: null,
+    selectedWords: [],
     votes: {},
     eliminatedId: null,
     killedId: null,
@@ -37,7 +37,7 @@ export function startWordCollection(state: WerewolfState): WerewolfState {
     phase: 'word_collect',
     round: state.round + 1,
     words: {},
-    selectedWord: null,
+    selectedWords: [],
     votes: {},
     eliminatedId: null,
     killedId: null,
@@ -60,9 +60,10 @@ export function allWordsCollected(state: WerewolfState): boolean {
 }
 
 export function revealWord(state: WerewolfState): WerewolfState {
-  const words = Object.values(state.words)
-  const selected = words[Math.floor(Math.random() * words.length)]
-  return { ...state, phase: 'word_reveal', selectedWord: selected }
+  const mafiaWords = Object.entries(state.words)
+    .filter(([id]) => state.roles[id] === 'mafia')
+    .map(([, word]) => word)
+  return { ...state, phase: 'word_reveal', selectedWords: mafiaWords }
 }
 
 export function startDay(state: WerewolfState): WerewolfState {
@@ -171,7 +172,7 @@ export function toSnapshot(state: WerewolfState): WerewolfSnapshot {
     phase: state.phase,
     round: state.round,
     players: state.players,
-    selectedWord: state.selectedWord,
+    selectedWords: state.selectedWords,
     eliminatedId: state.eliminatedId,
     killedId: state.killedId,
     lastTie: state.lastTie,

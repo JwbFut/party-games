@@ -3,17 +3,17 @@
     "title": "Party Games – Play with Friends Online",
     "description": "Free browser-based party games. No downloads, no accounts. Create a room, share the code, and play werewolf and more with friends over P2P.",
     "werewolfTitle": "Word Werewolf – Free Online Party Game",
-    "werewolfDescription": "Play Word Werewolf online with friends. Everyone submits a word, one is chosen secretly. Reason, bluff, and vote to uncover the mafia. No downloads needed – play instantly in your browser."
+    "werewolfDescription": "Play Word Werewolf online with friends. Everyone submits a word, and all of the mafia's words are revealed. Reason, bluff, and vote to uncover the mafia. No downloads needed – play instantly in your browser."
   },
   "gameInfo": {
     "werewolf": {
       "tagline": "A social deduction game with a twist of words",
-      "about": "Word Werewolf is a party game where every player contributes a word. One word is randomly selected and revealed to all. Town players must reason and vote to eliminate the hidden mafia, while mafia members secretly coordinate to take over. The twist: the chosen word adds a unique theme to every round.",
+      "about": "Word Werewolf is a party game where every player contributes a word. All of the mafia's words are revealed to everyone. Town players must reason and vote to eliminate the hidden mafia, while mafia members secretly coordinate to take over. The twist: the revealed words add a unique theme to every round.",
       "howToPlay": "How to Play",
       "steps": [
         "The host creates a room and shares the room code with friends.",
         "The host sets the number of Town and Mafia players, then starts the game.",
-        "Each player secretly submits a word. One word is randomly chosen and revealed.",
+        "Each player secretly submits a word. All of the mafia's words are revealed.",
         "During the Day phase, all players discuss and vote to eliminate a suspected mafia member.",
         "During the Night phase, mafia members secretly vote to eliminate a town player.",
         "Town wins if all mafia are eliminated. Mafia wins if they equal or outnumber town."
@@ -60,7 +60,7 @@
     "join": "Join",
     "games": "Games",
     "werewolf": "Word Werewolf",
-    "werewolfDesc": "Everyone submits a word. One is chosen. Reason, deceive, and vote to find the mafia.",
+    "werewolfDesc": "Everyone submits a word. All of the mafia's words are revealed. Reason, deceive, and vote to find the mafia.",
     "yourProfile": "Your Profile",
     "editProfile": "Edit",
     "noProfile": "Set up your profile to start playing."
@@ -96,7 +96,7 @@
     "wordPlaceholder": "Enter a word…",
     "wordSubmitted": "Word submitted! Waiting for others…",
     "wordRevealed": "Word Revealed",
-    "theWordIs": "The word is",
+    "theWordIs": "The words are",
     "vote": "Vote",
     "voteFor": "Vote to eliminate",
     "eliminated": "Eliminated",

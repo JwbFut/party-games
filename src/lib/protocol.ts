@@ -58,7 +58,7 @@ export interface WordSubmitPayload {
 }
 
 export interface WordRevealPayload {
-  word: string
+  words: string[]
 }
 
 export interface VotePayload {

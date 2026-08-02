@@ -40,9 +40,9 @@ export default function VotePhase({ alivePlayers, profile, ui, t, phase, onVote 
           <span className={`badge ${ui.myRole === 'mafia' ? 'badge-mafia' : 'badge-town'}`}>
             {ui.myRole === 'mafia' ? t('werewolf.mafia') : t('werewolf.town')}
           </span>
-          {ui.selectedWord && (
+          {ui.selectedWords.length > 0 && (
             <span style={{ marginLeft: '0.75rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-              {t('werewolf.theWordIs')}: <strong style={{ color: 'var(--accent)' }}>{ui.selectedWord}</strong>
+              {t('werewolf.theWordIs')}: <strong style={{ color: 'var(--accent)' }}>{ui.selectedWords.join(', ')}</strong>
             </span>
           )}
         </div>
