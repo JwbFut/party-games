@@ -20,6 +20,9 @@ export type MessageType =
   | 'GAME_STOP'
   | 'ROLE_ASSIGN'
   | 'HOST_LOST'
+  | 'ACK'
+  | 'STATE_SYNC'
+  | 'SYNC_REQUEST'
 
 export interface RoomMessage<T = unknown> {
   type: MessageType
@@ -91,6 +94,32 @@ export interface RoleAssignPayload {
   targetId: string
   role: 'town' | 'mafia'
   mafiaMembers: string[]
+}
+
+export interface AckPayload {
+  msgId: string
+}
+
+export interface PlayerSyncPayload {
+  phase: string
+  round: number
+  config: GameConfigPayload
+  myRole: 'town' | 'mafia' | null
+  mafiaMembers: string[]
+  selectedWords: string[]
+  eliminatedId: string | null
+  killedId: string | null
+  deadIds: string[]
+  lastTie: boolean
+  lastRandom: boolean
+  winner: 'town' | 'mafia' | null
+  wordsCollected: number
+  totalWords: number
+  votesCollected: number
+  totalVotes: number
+  myWord: string
+  myVote: string
+  wordSubmitted: boolean
 }
 
 export function generateRoomCode(): string {

@@ -3,7 +3,7 @@ import type { MqttClient } from 'mqtt'
 import type { PlayerProfile, PublicPlayer } from '../store/player'
 import type {
   RoomMessage, GameConfigPayload, JoinRequestPayload,
-  PlayerListPayload, JoinRejectPayload, PhaseChangePayload,
+  PlayerListPayload, JoinRejectPayload, PhaseChangePayload, AckPayload,
 } from './protocol'
 
 const APP_ID = 'org-jawbts-party-games-v1'
@@ -29,7 +29,7 @@ function getMqttBrokerUrl(): string {
 }
 
 type Listener<K extends keyof RoomEvents> = (data: RoomEvents[K]) => void
-type WireMessage = RoomMessage & { _cid: string }
+type WireMessage = RoomMessage & { _cid: string; msgId?: string; ack?: boolean }
 
 export interface RoomEvents {
   players: PublicPlayer[]
@@ -63,6 +63,9 @@ export class Room {
   private lobbyTimer: ReturnType<typeof setInterval> | null = null
   private lastListTs = 0
   private msgSeq = 0
+  private pending = new Map<string, { msg: WireMessage; topic: string; retries: number; nextAt: number }>()
+  private ackTimer: ReturnType<typeof setInterval> | null = null
+  private seen = new Set<string>()
 
   constructor(code: string, profile: PlayerProfile, isHost: boolean) {
     this.code = code
@@ -170,17 +173,17 @@ export class Room {
     } else {
       this.announce()
       if (!this.retryTimer) {
-        let retries = 0
+        // Keep announcing until we join: a host that is offline now may come
+        // back online later (e.g. reopens their browser), and a fresh
+        // JOIN_REQUEST published after they subscribe is what reaches them.
         this.retryTimer = setInterval(() => {
-          if (this.joinedOnce || this.destroyed || retries >= 9) {
+          if (this.joinedOnce || this.destroyed) {
             if (this.retryTimer) clearInterval(this.retryTimer)
             this.retryTimer = null
             return
           }
-          retries++
-          dbg(`retry announce (${retries * 3}s)`)
           this.announce()
-        }, 3000)
+        }, 5000)
       }
     }
   }
@@ -191,12 +194,27 @@ export class Room {
   }
 
   private onMsg(data: WireMessage): void {
+    if (data.type === 'ACK') {
+      this.handleAck(data)
+      return
+    }
     if (data.type === 'HOST_LOST') {
       if (!this.isHost) {
         dbg('host lost')
         this.emit('hostLost', undefined as never)
       }
       return
+    }
+
+    // Reliable-message handling: dedup by msgId and acknowledge the sender.
+    if (data.msgId) {
+      if (this.seen.has(data.msgId)) {
+        if (data.ack) this.sendAck(data) // re-ack so the sender stops retrying
+        return
+      }
+      this.seen.add(data.msgId)
+      if (this.seen.size > 500) this.seen = new Set([...this.seen].slice(-250))
+      if (data.ack) this.sendAck(data)
     }
 
     if (this.isHost) {
@@ -211,11 +229,21 @@ export class Room {
     dbg(`host handles: type=${msg.type} from=${msg.senderId.slice(0, 8)}`)
     switch (msg.type) {
       case 'JOIN_REQUEST': {
+        const { profile } = msg.payload as JoinRequestPayload
         if (this.locked) {
-          this.sendDirect(msg.senderId, this.makeMsg('JOIN_REJECT', { reason: 'game_started' }))
+          // Roster is frozen once the game starts. A matching id is a
+          // reconnecting player — re-accept and let the game resync it.
+          if (this.players.some(p => p.id === profile.id)) {
+            dbg(`reconnect player: ${profile.nickname} (${profile.id.slice(0, 8)})`)
+            this.sendDirect(profile.id, this.makeMsg('JOIN_ACCEPT', {}))
+            this.sendDirect(profile.id, this.makeMsg('PLAYER_LIST', {
+              players: this.players, hostId: this.hostId, locked: this.locked, config: this.config,
+            }))
+          } else {
+            this.sendDirect(msg.senderId, this.makeMsg('JOIN_REJECT', { reason: 'game_started' }))
+          }
           return
         }
-        const { profile } = msg.payload as JoinRequestPayload
         const existing = this.players.find(p => p.id === profile.id)
         if (existing) {
           dbg(`re-accept player: ${profile.nickname} (${profile.id.slice(0, 8)})`)
@@ -241,6 +269,7 @@ export class Room {
         break
       }
       case 'PLAYER_LEAVE': {
+        if (this.locked) break // roster frozen during game; the player may reconnect
         const before = this.players.length
         this.players = this.players.filter(p => p.id !== msg.senderId)
         if (this.players.length !== before) this.broadcastPlayerList()
@@ -335,8 +364,66 @@ export class Room {
     this.sendDirect(playerId, this.makeMsg(type, payload))
   }
 
+  // Reliable send to the host: queued, acknowledged, and retried (backoff capped
+  // at 5s) until the host ACKs. Used for player actions that must not be lost.
+  sendReliable(type: RoomMessage['type'], payload: unknown): void {
+    if (!this.hostId) {
+      dbg(`sendReliable: no hostId for ${type}`)
+      return
+    }
+    const msg = this.makeMsg(type, payload)
+    const msgId = `${msg.senderId}:${msg.seq}`
+    const wire: WireMessage = { ...msg, msgId, ack: true }
+    const topic = `${this.base}/dm/${this.hostId}`
+    this.pending.set(msgId, { msg: wire, topic, retries: 0, nextAt: Date.now() })
+    this.publish(topic, wire)
+    this.ensureAckTimer()
+  }
+
+  private ensureAckTimer(): void {
+    if (this.ackTimer) return
+    this.ackTimer = setInterval(() => this.flushPending(), 500)
+  }
+
+  private flushPending(): void {
+    const now = Date.now()
+    for (const entry of this.pending.values()) {
+      if (now >= entry.nextAt) {
+        entry.retries++
+        entry.nextAt = now + Math.min(500 * 2 ** entry.retries, 5000)
+        this.publish(entry.topic, entry.msg)
+      }
+    }
+    if (this.pending.size === 0 && this.ackTimer) {
+      clearInterval(this.ackTimer)
+      this.ackTimer = null
+    }
+  }
+
+  private handleAck(data: WireMessage): void {
+    const { msgId } = data.payload as AckPayload
+    this.pending.delete(msgId)
+  }
+
+  private sendAck(data: WireMessage): void {
+    if (!data.msgId) return
+    this.sendDirect(data.senderId, this.makeMsg('ACK', { msgId: data.msgId }))
+  }
+
   setConfig(config: GameConfigPayload): void {
     this.config = config
+    this.broadcastPlayerList()
+  }
+
+  // Restore the host's room state after the host reloads the page. The game
+  // state itself lives in WerewolfGame; this revives the roster/lock so the
+  // host can answer reconnecting players again.
+  restoreAsHost(players: PublicPlayer[], config: GameConfigPayload): void {
+    this.players = players
+    this.config = config
+    this.locked = true
+    this.hostId = this.profile.id
+    this.emit('locked', true)
     this.broadcastPlayerList()
   }
 
@@ -370,6 +457,12 @@ export class Room {
       clearInterval(this.lobbyTimer)
       this.lobbyTimer = null
     }
+    if (this.ackTimer) {
+      clearInterval(this.ackTimer)
+      this.ackTimer = null
+    }
+    this.pending.clear()
+    this.seen.clear()
     dbg('destroy')
     this.listeners.clear()
     // Graceful end sends DISCONNECT, which suppresses the last-will.

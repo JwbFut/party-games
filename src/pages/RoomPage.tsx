@@ -7,7 +7,7 @@ import { loadProfile, type PublicPlayer } from '../store/player'
 import type { RoomMessage } from '../lib/protocol'
 import WerewolfGame from '../games/werewolf/WerewolfGame'
 
-type ConnState = 'connecting' | 'connected' | 'rejected' | 'hostLost' | 'error'
+type ConnState = 'connecting' | 'connected' | 'rejected' | 'error'
 
 interface Props {
   code: string
@@ -28,6 +28,8 @@ export default function RoomPage({ code, isHost }: Props) {
   const [locked, setLocked] = useState(false)
   const [toast, setToast] = useState('')
   const [msgLog, setMsgLog] = useState<RoomMessage[]>([])
+  const [hostMaybeOffline, setHostMaybeOffline] = useState(false)
+  const [hostOffline, setHostOffline] = useState(false)
 
   useEffect(() => {
     if (!profile || !code) {
@@ -46,14 +48,21 @@ export default function RoomPage({ code, isHost }: Props) {
     roomRef.current = room
 
     const unsubs = [
-      room.on('players', p => setPlayers([...p])),
+      room.on('players', p => {
+        setPlayers([...p])
+        setHostOffline(false) // a player list can only come from a live host
+      }),
       room.on('locked', l => setLocked(l)),
-      room.on('joined', () => setConnState('connected')),
+      room.on('joined', () => {
+        setHostMaybeOffline(false)
+        setHostOffline(false)
+        setConnState('connected')
+      }),
       room.on('rejected', reason => {
         setRejectReason(reason)
         setConnState('rejected')
       }),
-      room.on('hostLost', () => setConnState('hostLost')),
+      room.on('hostLost', () => setHostOffline(true)),
       room.on('error', reason => {
         setRejectReason(reason)
         setConnState('rejected')
@@ -68,12 +77,14 @@ export default function RoomPage({ code, isHost }: Props) {
       setConnState('error')
     })
 
-    const timeout = isHost ? undefined : setTimeout(() => {
-      setConnState(prev => prev === 'connecting' ? 'error' : prev)
-    }, 45_000)
+    // If the host hasn't answered after a while, hint that it may be offline —
+    // but keep retrying (the Room keeps re-announcing) so we connect once it's back.
+    const offlineTimer = isHost ? undefined : setTimeout(() => {
+      setHostMaybeOffline(true)
+    }, 8_000)
 
     return () => {
-      if (timeout) clearTimeout(timeout)
+      if (offlineTimer) clearTimeout(offlineTimer)
       unsubs.forEach(u => u())
       room.destroy()
       roomRef.current = null
@@ -98,7 +109,14 @@ export default function RoomPage({ code, isHost }: Props) {
   if (connState === 'connecting') {
     return (
       <div className="container">
-        <div className="empty-state">{t('room.connecting')}</div>
+        <div className="empty-state">
+          {t('room.connecting')}
+          {hostMaybeOffline && (
+            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '0.75rem', lineHeight: 1.6 }}>
+              {t('room.hostMaybeOffline')}
+            </div>
+          )}
+        </div>
       </div>
     )
   }
@@ -125,17 +143,6 @@ export default function RoomPage({ code, isHost }: Props) {
     return (
       <div className="container">
         <div className="empty-state">{reasonText}</div>
-        <button className="btn-ghost" style={{ display: 'block', margin: '1rem auto' }} onClick={() => navigate(`/${lang}`)}>
-          {t('nav.home')}
-        </button>
-      </div>
-    )
-  }
-
-  if (connState === 'hostLost') {
-    return (
-      <div className="container">
-        <div className="empty-state">{t('room.hostDisconnected')}</div>
         <button className="btn-ghost" style={{ display: 'block', margin: '1rem auto' }} onClick={() => navigate(`/${lang}`)}>
           {t('nav.home')}
         </button>
@@ -172,6 +179,19 @@ export default function RoomPage({ code, isHost }: Props) {
       />
 
       {toast && <div className="toast">{toast}</div>}
+
+      {hostOffline && (
+        <div className="modal-overlay" style={{ zIndex: 300 }}>
+          <div className="modal" style={{ textAlign: 'center', maxWidth: '360px' }}>
+            <div style={{ fontSize: '2.2rem', marginBottom: '0.5rem' }}>📡</div>
+            <h2 style={{ marginBottom: '0.5rem' }}>{t('room.hostOfflineTitle')}</h2>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: 1.6, marginBottom: '1.25rem' }}>
+              {t('room.hostOfflineDesc')}
+            </p>
+            <button className="btn-ghost" onClick={leave}>{t('room.leave')}</button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

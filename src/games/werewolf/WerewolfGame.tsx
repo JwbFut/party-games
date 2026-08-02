@@ -5,7 +5,7 @@ import type { PlayerProfile, PublicPlayer } from '../../store/player'
 import type {
   RoomMessage, WordSubmitPayload, VotePayload, WordRevealPayload,
   VoteResultPayload, KillResultPayload, GameEndPayload, RoleAssignPayload,
-  PhaseChangePayload, WordProgressPayload,
+  PhaseChangePayload, WordProgressPayload, PlayerSyncPayload, JoinRequestPayload,
 } from '../../lib/protocol'
 import type { GamePhase, Role, WerewolfState, WerewolfConfig } from './types'
 import * as logic from './logic'
@@ -68,6 +68,32 @@ const initialUI: UIState = {
   wordSubmitted: false,
 }
 
+const hostStateKey = (code: string) => `party-games:host-state:${code}`
+
+function loadHostState(code: string): WerewolfState | null {
+  try {
+    const raw = localStorage.getItem(hostStateKey(code))
+    if (!raw) return null
+    const s = JSON.parse(raw) as WerewolfState
+    if (!s || !s.phase || !Array.isArray(s.players)) return null
+    return s
+  } catch {
+    return null
+  }
+}
+
+function saveHostState(code: string, state: WerewolfState): void {
+  try {
+    localStorage.setItem(hostStateKey(code), JSON.stringify(state))
+  } catch { /* storage unavailable — non-fatal */ }
+}
+
+function clearHostState(code: string): void {
+  try {
+    localStorage.removeItem(hostStateKey(code))
+  } catch { /* ignore */ }
+}
+
 export default function WerewolfGame({ room, profile, players, locked, isHost }: Props) {
   const { t } = useTranslation()
   const [ui, setUI] = useState<UIState>(initialUI)
@@ -75,6 +101,34 @@ export default function WerewolfGame({ room, profile, players, locked, isHost }:
 
   const patch = useCallback((p: Partial<UIState> | ((prev: UIState) => Partial<UIState>)) => {
     setUI(prev => ({ ...prev, ...(typeof p === 'function' ? p(prev) : p) }))
+  }, [])
+
+  // Build a full per-player state snapshot from the host's authoritative state.
+  const buildSync = useCallback((playerId: string): PlayerSyncPayload => {
+    const s = stateRef.current
+    const alive = s.players.filter(p => p.alive)
+    const aliveMafia = alive.filter(p => s.roles[p.id] === 'mafia')
+    return {
+      phase: s.phase,
+      round: s.round,
+      config: s.config,
+      myRole: s.roles[playerId] ?? null,
+      mafiaMembers: logic.getMafiaMembers(s),
+      selectedWords: s.selectedWords,
+      eliminatedId: s.eliminatedId,
+      killedId: s.killedId,
+      deadIds: s.players.filter(p => !p.alive).map(p => p.id),
+      lastTie: s.lastTie,
+      lastRandom: s.lastRandom,
+      winner: s.winner,
+      wordsCollected: Object.keys(s.words).length,
+      totalWords: alive.length,
+      votesCollected: Object.keys(s.votes).length,
+      totalVotes: s.phase === 'night' ? aliveMafia.length : alive.length,
+      myWord: s.words[playerId] ?? '',
+      myVote: s.votes[playerId] ?? '',
+      wordSubmitted: !!s.words[playerId],
+    }
   }, [])
 
   /* ── Host: process incoming player actions ── */
@@ -85,6 +139,20 @@ export default function WerewolfGame({ room, profile, players, locked, isHost }:
         const s = stateRef.current
 
         switch (msg.type) {
+          case 'JOIN_REQUEST': {
+            // Reconnecting player during a game — resync their view from host state.
+            if (!room.locked) break
+            const { profile: joiner } = msg.payload as JoinRequestPayload
+            room.sendPrivate(joiner.id, 'STATE_SYNC', buildSync(joiner.id))
+            break
+          }
+          case 'SYNC_REQUEST': {
+            // Player mounted and explicitly asked for the current state.
+            if (!room.locked) break
+            if (!room.players.some(p => p.id === msg.senderId)) break
+            room.sendPrivate(msg.senderId, 'STATE_SYNC', buildSync(msg.senderId))
+            break
+          }
           case 'WORD_SUBMIT': {
             if (s.phase !== 'word_collect') return
             const { word } = msg.payload as WordSubmitPayload
@@ -172,6 +240,31 @@ export default function WerewolfGame({ room, profile, players, locked, isHost }:
             patch({ selectedWords: words, phase: 'word_reveal' })
             break
           }
+          case 'STATE_SYNC': {
+            const p = msg.payload as PlayerSyncPayload
+            patch({
+              phase: p.phase as GamePhase,
+              round: p.round,
+              config: p.config,
+              myRole: p.myRole,
+              mafiaMembers: p.mafiaMembers,
+              selectedWords: p.selectedWords,
+              eliminatedId: p.eliminatedId,
+              killedId: p.killedId,
+              deadIds: p.deadIds,
+              lastTie: p.lastTie,
+              lastRandom: p.lastRandom,
+              winner: p.winner,
+              wordsCollected: p.wordsCollected,
+              totalWords: p.totalWords,
+              votesCollected: p.votesCollected,
+              totalVotes: p.totalVotes,
+              myWord: p.myWord,
+              myVote: p.myVote,
+              wordSubmitted: p.wordSubmitted,
+            })
+            break
+          }
           case 'VOTE_RESULT': {
             const { eliminatedId, tie } = msg.payload as VoteResultPayload
             patch(prev => ({ eliminatedId, lastTie: tie, phase: 'day_result', deadIds: eliminatedId ? [...prev.deadIds, eliminatedId] : prev.deadIds }))
@@ -199,13 +292,72 @@ export default function WerewolfGame({ room, profile, players, locked, isHost }:
     return () => unsubs.forEach(u => u())
   }, [isHost, room, profile.id, patch]) // stable callbacks omitted intentionally
 
+  /* ── Player: ask the host for a full resync once mounted. Covers page reload,
+        where the host's JOIN_REQUEST-ack sync can arrive before we listen. ── */
+  useEffect(() => {
+    if (isHost) return
+    room.sendMsg('SYNC_REQUEST', {})
+    const t = setTimeout(() => room.sendMsg('SYNC_REQUEST', {}), 800)
+    return () => clearTimeout(t)
+  }, [isHost, room])
+
+  /* ── Host: push authoritative state to players on change (debounced).
+        Reconnects are answered immediately in the JOIN_REQUEST handler. ── */
+  const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const requestSync = useCallback(() => {
+    if (syncTimer.current) return
+    syncTimer.current = setTimeout(() => {
+      syncTimer.current = null
+      for (const p of room.players) {
+        if (p.id === profile.id) continue
+        room.sendPrivate(p.id, 'STATE_SYNC', buildSync(p.id))
+      }
+    }, 200)
+  }, [room, profile.id, buildSync])
+
+  useEffect(() => () => {
+    if (syncTimer.current) clearTimeout(syncTimer.current)
+  }, [])
+
+  /* ── Host: restore persisted game state after a page reload ── */
+  const restoredRef = useRef(false)
+  useEffect(() => {
+    if (!isHost || restoredRef.current) return
+    restoredRef.current = true
+    const saved = loadHostState(room.code)
+    if (!saved || saved.phase === 'lobby') return
+    stateRef.current = saved
+    room.restoreAsHost(
+      saved.players.map(p => ({ id: p.id, nickname: p.nickname, avatar: p.avatar, peerId: '' })),
+      saved.config,
+    )
+    const sync = buildSync(profile.id)
+    patch({ ...sync, phase: sync.phase as GamePhase })
+    requestSync()
+  }, [isHost, room, profile.id, buildSync, requestSync, patch])
+
+  /* ── Host: persist game state so a page reload can resume hosting ── */
+  useEffect(() => {
+    if (!isHost) return
+    const save = () => {
+      if (stateRef.current.phase !== 'lobby') saveHostState(room.code, stateRef.current)
+    }
+    const t = setInterval(save, 2000)
+    window.addEventListener('beforeunload', save)
+    return () => {
+      clearInterval(t)
+      window.removeEventListener('beforeunload', save)
+    }
+  }, [isHost, room])
+
   /* ── Host helpers ── */
   const advanceToDay = useCallback(() => {
     stateRef.current = logic.startDay(stateRef.current)
     const s = stateRef.current
     room.sendMsg('PHASE_CHANGE', { phase: 'day', round: s.round } satisfies PhaseChangePayload)
     patch({ phase: 'day', round: s.round, selectedWords: s.selectedWords, votesCollected: 0, totalVotes: s.players.filter(p => p.alive).length, myVote: '' })
-  }, [room, patch])
+    requestSync()
+  }, [room, patch, requestSync])
 
   const broadcastDayResult = useCallback(() => {
     const s = stateRef.current
@@ -224,7 +376,8 @@ export default function WerewolfGame({ room, profile, players, locked, isHost }:
       patch(prev => ({ phase: 'day_result', eliminatedId: s.eliminatedId, lastTie: s.lastTie, deadIds: s.eliminatedId ? [...prev.deadIds, s.eliminatedId] : prev.deadIds }))
       setTimeout(() => advanceToNight(), 3000)
     }
-  }, [room, patch])
+    requestSync()
+  }, [room, patch, requestSync])
 
   const advanceToNight = useCallback(() => {
     const s = stateRef.current
@@ -232,7 +385,8 @@ export default function WerewolfGame({ room, profile, players, locked, isHost }:
     const aliveMafia = s.players.filter(p => p.alive && s.roles[p.id] === 'mafia')
     room.sendMsg('PHASE_CHANGE', { phase: 'night', round: s.round } satisfies PhaseChangePayload)
     patch({ phase: 'night', votesCollected: 0, totalVotes: aliveMafia.length, myVote: '' })
-  }, [room, patch])
+    requestSync()
+  }, [room, patch, requestSync])
 
   const broadcastNightResult = useCallback(() => {
     const s = stateRef.current
@@ -251,7 +405,8 @@ export default function WerewolfGame({ room, profile, players, locked, isHost }:
       patch(prev => ({ phase: 'night_result', killedId: s.killedId, lastTie: s.lastTie, lastRandom: s.lastRandom, deadIds: s.killedId ? [...prev.deadIds, s.killedId] : prev.deadIds }))
       setTimeout(() => advanceToNextDay(), 3000)
     }
-  }, [room, patch])
+    requestSync()
+  }, [room, patch, requestSync])
 
   const advanceToNextDay = useCallback(() => {
     const s = stateRef.current
@@ -265,11 +420,13 @@ export default function WerewolfGame({ room, profile, players, locked, isHost }:
       myWord: '', myVote: '', wordSubmitted: false,
     })
     room.sendMsg('WORD_PROGRESS', { count: 0, total: snap.totalWords } satisfies WordProgressPayload)
-  }, [room, patch])
+    requestSync()
+  }, [room, patch, requestSync])
 
   const resetGame = useCallback(() => {
     stateRef.current = logic.createInitialState(stateRef.current.config)
     setUI(prev => ({ ...initialUI, config: prev.config }))
+    clearHostState(room.code)
     room.unlockRoom()
   }, [room])
 
@@ -313,7 +470,8 @@ export default function WerewolfGame({ room, profile, players, locked, isHost }:
       winner: null,
     })
     room.sendMsg('WORD_PROGRESS', { count: 0, total: snap.totalWords } satisfies WordProgressPayload)
-  }, [players, room, profile.id, patch])
+    requestSync()
+  }, [players, room, profile.id, patch, requestSync])
 
   const submitWord = useCallback((word: string) => {
     if (isHost) {
@@ -328,7 +486,7 @@ export default function WerewolfGame({ room, profile, players, locked, isHost }:
         advanceToDay()
       }
     } else {
-      room.sendMsg('WORD_SUBMIT', { word } satisfies WordSubmitPayload)
+      room.sendReliable('WORD_SUBMIT', { word } satisfies WordSubmitPayload)
       patch({ wordSubmitted: true, myWord: word })
     }
   }, [isHost, room, profile.id, patch, advanceToDay])
@@ -347,7 +505,7 @@ export default function WerewolfGame({ room, profile, players, locked, isHost }:
       }
     } else {
       console.log('[WW] player send VOTE →', targetId.slice(0, 8))
-      room.sendMsg('VOTE', { targetId } satisfies VotePayload)
+      room.sendReliable('VOTE', { targetId } satisfies VotePayload)
       patch({ myVote: targetId })
     }
   }, [isHost, room, profile.id, patch, broadcastDayResult])
@@ -361,7 +519,7 @@ export default function WerewolfGame({ room, profile, players, locked, isHost }:
         broadcastNightResult()
       }
     } else {
-      room.sendMsg('KILL_VOTE', { targetId } satisfies VotePayload)
+      room.sendReliable('KILL_VOTE', { targetId } satisfies VotePayload)
       patch({ myVote: targetId })
     }
   }, [isHost, room, profile.id, patch, broadcastNightResult])

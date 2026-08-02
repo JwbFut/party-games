@@ -78,10 +78,12 @@
     "joinRejected": "Cannot join: {{reason}}",
     "alreadyInRoom": "You are already in this room.",
     "roomTaken": "This room already has a host.",
-    "hostDisconnected": "Host disconnected. The room has been closed.",
+    "hostOfflineTitle": "Host is offline",
+    "hostOfflineDesc": "The host has disconnected. Keep this page open — the game resumes automatically once the host is back online.",
     "start": "Start Game",
     "stop": "Stop Game",
     "connecting": "Connecting…",
+    "hostMaybeOffline": "Can't reach the host. They may be offline — please wait, or ask the host to open the game in their browser.",
     "connectionFailed": "Connection failed. Please try again."
   },
   "werewolf": {

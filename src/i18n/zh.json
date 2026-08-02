@@ -78,10 +78,12 @@
     "joinRejected": "无法加入：{{reason}}",
     "alreadyInRoom": "你已经在这个房间中了。",
     "roomTaken": "该房间已有房主。",
-    "hostDisconnected": "房主已断开连接，房间已关闭。",
+    "hostOfflineTitle": "房主已离线",
+    "hostOfflineDesc": "房主已断开连接。请保持此页面打开，房主重新上线后游戏会自动恢复。",
     "start": "开始游戏",
     "stop": "停止游戏",
     "connecting": "连接中…",
+    "hostMaybeOffline": "连不上房主，房主可能不在线。请稍候，或让房主在浏览器中打开游戏。",
     "connectionFailed": "连接失败，请重试。"
   },
   "werewolf": {
